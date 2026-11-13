@@ -204,6 +204,15 @@ class PrepareLoop(unittest.TestCase):
         return runner.prepare_once(self.config, request or (lambda config, path: self.listing), self.logged.append,
                                    self.account, *self.memory)
 
+    def test_a_pc_path_the_approval_names_but_this_pc_lacks_is_not_ready(self):
+        # 키트는 외부 프로그램(Ghidra·JDK)을 설치하지 않는다. 승인 명령의 경로가 없으면 준비로 세지 않는다.
+        body = {**entry()["manifest"], "command": ["/no/such/ghidra/samples"]}
+        self.listing = {"servers": [entry(manifest=body, manifest_sha256=runner_digest(body))]}
+        self.once()
+        self.assertEqual(runner.preparation["ready"], 0)
+        self.assertEqual(runner.preparation["note"], "이 PC에 없는 경로: /no/such/ghidra/samples")
+        self.engine.assert_not_called()
+
     def test_an_approved_server_gets_its_folders_and_a_long_image_budget_before_any_call(self):
         self.assertEqual(self.once(), runner.PREPARE_EVERY)
         self.mounts.assert_called_once()

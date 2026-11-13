@@ -228,7 +228,8 @@ class Terminal(unittest.TestCase):
 
     def test_finish_stays_until_a_closing_key(self):
         screen, output = self.screen()
-        keys = mock.Mock(side_effect=["", "x", "", "\r"])
+        # read_key는 Enter를 "enter"로 돌려준다(원문 줄바꿈 문자가 아니다).
+        keys = mock.Mock(side_effect=["", "x", "", "enter"])
         with mock.patch.object(screen, "read_key", keys):
             screen.finish()
         self.assertEqual(keys.call_count, 4)

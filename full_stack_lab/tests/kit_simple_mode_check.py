@@ -174,6 +174,20 @@ class ManagedLinux(unittest.TestCase):
             self.assertIn('CODEX_CA_CERTIFICATE="', text)
             self.assertEqual(text.count("NODE_EXTRA_CA_CERTS"), 1)
 
+    def test_the_gateway_root_goes_in_the_system_store_and_codex_needs_no_variable(self):
+        # 설치 전에 연 세션(터미널 서버·Codex 백그라운드 서버)은 /etc/environment를 다시 읽지 않는다.
+        store = self.root / "anchors"
+        store.mkdir()
+        with mock.patch.object(self.m, "SYSTEM_TRUST", ((self.root / "absent", ("true",)), (store, ("true",)))),                 mock.patch.object(self.m.shutil, "which", return_value="/usr/bin/true"),                 mock.patch.object(self.m.subprocess, "run") as run:
+            self.assertTrue(self.m.system_trust(1000, "PEM"))
+            self.assertEqual((store / "mcpgw-1000.crt").read_text(), "PEM")
+            self.assertFalse(self.m.system_trust(1000, None))
+            self.assertFalse((store / "mcpgw-1000.crt").exists())
+            self.assertEqual(run.call_count, 2)
+        config = {"uid": 1000, "ca_certificate": "PEM"}
+        self.assertIn("CODEX_CA_CERTIFICATE", self.m.ca_environment(config))
+        self.assertEqual(set(self.m.ca_environment({**config, "system_trust": True})), {"NODE_EXTRA_CA_CERTS"})
+
     def test_simple_checks_report_only_the_protected_files(self):
         files = {}
         for name in ("managed-mcp.json", "managed-settings.json", "requirements.toml", "managed_config.toml"):
