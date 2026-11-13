@@ -77,6 +77,19 @@ class Preparation(unittest.TestCase):
         self.assertIn('--require-hashes',command)
         self.assertIn('--only-binary=:all:',command)
 
+    def test_a_source_server_finds_its_own_distribution(self):
+        # 공식 fetch·git·time 서버는 시작할 때 importlib.metadata.version(자기 이름)을 읽는다(pj0에서 세 개 모두 종료 코드 1).
+        import importlib.metadata
+        self.data,self.digest=archive({'src/fetch/pyproject.toml':b'[project]\nname = "mcp-server-fetch"\nversion = "0.6.3"\n',
+                                      'src/fetch/src/mcp_server_fetch/__init__.py':b'',
+                                      'src/fetch/src/mcp_server_fetch/__main__.py':b'pass\n','requirements.lock':b''})
+        self.body['source']={**self.body['source'],'sha256':self.digest,'entrypoint':'src/fetch/src/mcp_server_fetch/__main__.py'}
+        _,folder,_=source.prepare(self.config,self.body,self.request)
+        found=next(importlib.metadata.distributions(name='mcp-server-fetch',path=[str(folder/'packages')]))
+        self.assertEqual(found.version,'0.6.3')
+        # 메타데이터만 만든다: 코드는 여전히 승인 소스 경로에서만 온다.
+        self.assertEqual(sorted(p.name for p in (folder/'packages').rglob('*') if p.is_file()),['METADATA'])
+
     def test_changed_prepared_file_fails_closed(self):
         _,folder,_=source.prepare(self.config,self.body,self.request)
         (folder/'source/main.py').write_text('changed')
