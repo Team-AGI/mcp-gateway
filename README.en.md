@@ -10,7 +10,7 @@
 
 [![Verify](https://github.com/MCP-governance/mcp-gateway/actions/workflows/verify.yml/badge.svg?branch=main)](https://github.com/MCP-governance/mcp-gateway/actions/workflows/verify.yml)
 [![CodeQL](https://github.com/MCP-governance/mcp-gateway/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/MCP-governance/mcp-gateway/actions/workflows/codeql.yml)
-![Version](https://img.shields.io/badge/version-1.0.0-1f4287)
+![Version](https://img.shields.io/badge/version-1.0.1-1f4287)
 ![MCP](https://img.shields.io/badge/MCP-2025--11--25-1f4287)
 ![Docker](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 
@@ -51,7 +51,7 @@ relationship ends MINT blocks it immediately and judges, from evidence, whether 
 The install example uses the public `v1.0.0` release of the deployment repository [MCP-governance/mint](https://github.com/MCP-governance/mint). The current-code descriptions in this README also include [unreleased changes](CHANGELOG.md#미배포).
 
 ```bash
-git clone --branch v1.0.0 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.1 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <internal IPv4>
 ```

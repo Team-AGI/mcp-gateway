@@ -168,6 +168,21 @@ class Packages(unittest.TestCase):
         self.assertEqual(out.getvalue().splitlines(), ["[필수 구성요소 설치]", "[관리형 연결 설치: u]",
                                                        "모델 응답: claude 정상 · 3.1초", "다음 할 일: 새 터미널에서 claude를 실행하세요"])
 
+    def test_enter_closes_the_finished_screen(self):
+        spec = importlib.util.spec_from_file_location("kit_screen_finish", KIT / "kit_screen.py")
+        linux = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(linux)
+        with redirect_stdout(io.StringIO()):
+            screen = linux.Screen("내 PC 연결")
+            keys = iter(["", "enter", "unread"])
+            screen.window = screen
+            screen.read_key = lambda timeout=2: next(keys)
+            screen.draw = lambda *extra: None
+            screen.stop = lambda: setattr(screen, "window", None)
+            screen.finish()
+        self.assertIsNone(screen.window)
+        self.assertEqual(next(keys), "unread")
+
     def test_the_install_end_message_points_at_the_status_command(self):
         source = (KIT / "bootstrap.py").read_text(encoding="utf-8")
         self.assertIn("mint", source[source.index("로컬 MCP 준비(폴더 만들기"):][:200])
@@ -203,6 +218,15 @@ class PrepareLoop(unittest.TestCase):
     def once(self, request=None):
         return runner.prepare_once(self.config, request or (lambda config, path: self.listing), self.logged.append,
                                    self.account, *self.memory)
+
+    def test_a_pc_path_the_approval_names_but_this_pc_lacks_is_not_ready(self):
+        # 키트는 외부 프로그램(Ghidra·JDK)을 설치하지 않는다. 승인 명령의 경로가 없으면 준비로 세지 않는다.
+        body = {**entry()["manifest"], "command": ["/no/such/ghidra/samples"]}
+        self.listing = {"servers": [entry(manifest=body, manifest_sha256=runner_digest(body))]}
+        self.once()
+        self.assertEqual(runner.preparation["ready"], 0)
+        self.assertEqual(runner.preparation["note"], "이 PC에 없는 경로: /no/such/ghidra/samples")
+        self.engine.assert_not_called()
 
     def test_an_approved_server_gets_its_folders_and_a_long_image_budget_before_any_call(self):
         self.assertEqual(self.once(), runner.PREPARE_EVERY)
