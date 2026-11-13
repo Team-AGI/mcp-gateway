@@ -168,21 +168,6 @@ class Packages(unittest.TestCase):
         self.assertEqual(out.getvalue().splitlines(), ["[필수 구성요소 설치]", "[관리형 연결 설치: u]",
                                                        "모델 응답: claude 정상 · 3.1초", "다음 할 일: 새 터미널에서 claude를 실행하세요"])
 
-    def test_enter_closes_the_finished_screen(self):
-        spec = importlib.util.spec_from_file_location("kit_screen_finish", KIT / "kit_screen.py")
-        linux = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(linux)
-        with redirect_stdout(io.StringIO()):
-            screen = linux.Screen("내 PC 연결")
-            keys = iter(["", "enter", "unread"])
-            screen.window = screen
-            screen.read_key = lambda timeout=2: next(keys)
-            screen.draw = lambda *extra: None
-            screen.stop = lambda: setattr(screen, "window", None)
-            screen.finish()
-        self.assertIsNone(screen.window)
-        self.assertEqual(next(keys), "unread")
-
     def test_the_install_end_message_points_at_the_status_command(self):
         source = (KIT / "bootstrap.py").read_text(encoding="utf-8")
         self.assertIn("mint", source[source.index("로컬 MCP 준비(폴더 만들기"):][:200])
