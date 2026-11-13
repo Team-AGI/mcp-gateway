@@ -1,6 +1,6 @@
 # MINT 운영 설치 및 관리
 
-이 문서는 MINT 1.0.2을 조직의 서버에 설치하고 운영하는 관리자를 위한 안내입니다. 아래 명령은 별도 표시가 없으면 `mint/deploy`에서 실행합니다.
+이 문서는 MINT 1.0.3을 조직의 서버에 설치하고 운영하는 관리자를 위한 안내입니다. 아래 명령은 별도 표시가 없으면 `mint/deploy`에서 실행합니다.
 
 ## 설치 전 준비
 
@@ -15,7 +15,7 @@
 ## 설치와 첫 로그인
 
 ```bash
-git clone --branch v1.0.2 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.3 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <사내 IPv4>
 ```
