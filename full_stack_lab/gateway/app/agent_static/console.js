@@ -306,6 +306,8 @@ const ICON = {
 };
 ICON.endpoints = ICON.people;
 ICON.security = ICON.coverage;
+ICON.inbox = ICON.approvals;
+ICON.connections = ICON.coverage;
 const icon = (name) => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ""}</svg>`);
 
 let toastTimer;
@@ -624,9 +626,10 @@ async function refreshBadges() {
   } catch {  }
   if (!viewer.pages.includes("overview")) return renderNav($("#view").dataset.page);
   try {
-    const [o, conn] = await Promise.all([gw("overview"), api("/api/connectors?summary=1")]);
-    badges.approvals = o.pending_approvals;
-    badges.termination = (o.termination?.open_cases || 0) + (o.termination?.awaiting_close || 0);
+    const [o, conn, queue] = await Promise.all([gw("overview"), api("/api/connectors?summary=1"), loadInbox(inboxContext()).catch(() => null)]);
+    badges.inbox = queue ? queue.items.length : o.pending_approvals;
+    badges.intake = o.intake_actions || 0;
+    badges.termination = o.termination?.overdue || 0;
     badges.coverage = conn.summary.pending + conn.summary.expired;
     renderNav($("#view").dataset.page);
   } catch {  }
@@ -1009,6 +1012,16 @@ function feedCharts() {
   }
   return {
     "c-minutes": () => charts.decisionColumns(series.map((b) => b.label), series),
+    "c-calls-trend": () => charts.decisionColumns(series.map((b) => b.label), series, { onClick: (event) => {
+      const bucket = series[event.dataIndex];
+      if (!bucket) return;
+      const step = data.bucket === "day" ? 86400000 : data.bucket === "hour" ? 3600000 : 2678400000;
+      const decision = DECISIONS.find((d) => charts.DECISION_LABEL[d] === event.seriesName) || "";
+      applyFeedFilters({ since: new Date(bucket.at).toISOString(), until: new Date(bucket.at + step).toISOString(), decision });
+    } }),
+    "c-decision-mix": () => ({ ...charts.donut(DECISIONS.map((d) => ({ name: charts.DECISION_LABEL[d], color: charts.color(d),
+      value: (data.series || []).filter((row) => row.decision === d).reduce((sum, row) => sum + (Number(row.n) || 0), 0) }))),
+      onClick: (event) => applyFeedFilters({ decision: DECISIONS.find((d) => charts.DECISION_LABEL[d] === event.name) || "" }) }),
     "c-by-server": () => charts.decisionColumns(data.servers.map((x) => x.key), data.servers, { horizontal: true, grouped: true }),
     ...(viewer.admin ? { "c-by-person": () => charts.decisionColumns(data.people.map((x) => x.key), data.people, { horizontal: true, grouped: true }) } : {}),
     "c-by-response": () => charts.donut(Object.entries(RESPONSE).map(([k, [tone, label]]) => ({ name: label,
@@ -1020,11 +1033,18 @@ function feedCharts() {
   };
 }
 
+function applyFeedFilters(values) {
+  Object.assign(feed.filters, values);
+  feed.page = 1;
+  rememberFeed();
+  reload();
+}
+
 function renderFeed(newIds = []) {
   const body = $("#feed");
   if (!body) return;
   const focused = document.activeElement?.closest?.("#feed tr")?.dataset.id;
-  body.innerHTML = String(html`${feed.rows.map(decisionRow)}`);
+  body.innerHTML = String(html`${feed.rows.map(callRow)}`);
   const fresh = new Set(newIds.map(String));
   for (const row of body.querySelectorAll("tr[data-id]")) row.classList.toggle("new-call", fresh.has(row.dataset.id));
   if (focused) $(`#feed tr[data-id="${CSS.escape(focused)}"]`)?.focus();
@@ -1066,6 +1086,14 @@ function startLive() {
   }, 5000);
 }
 
+const callRow = (r) => html`<tr class="clickable" tabindex="0" data-act="decision" data-id="${r.id}">
+    <td class="nowrap">${when(r.at, { seconds: true })}</td><td>${decisionChip(r.decision)}${r.invalid ? chip("outline", "무효 처리") : ""}</td>
+    ${viewer.admin ? html`<td class="cut">${r.who}</td>` : ""}<td class="cut"><b>${r.server_name || r.server}</b> <span class="muted mono">${r.tool}</span></td>
+    ${viewer.admin ? html`<td class="cut" title="${r.policy_id || ""}">${r.policy_id ? policyLabel(r.policy_id) : "—"}</td>` : ""}
+    <td class="cut">${r.outcome_axes?.execution || "—"}</td><td class="chev" aria-hidden="true">›</td></tr>`;
+const callTable = (rows, id = "") => html`<table class="data rows-32 calls"><thead><tr><th>시각</th><th>판정</th>${viewer.admin ? html`<th>사용자</th>` : ""}<th>MCP · 도구</th>
+  ${viewer.admin ? html`<th>적용 정책</th>` : ""}<th>실행</th><th></th></tr></thead><tbody ${id ? raw(`id="${id}"`) : ""}>${rows.map(callRow)}</tbody></table>`;
+
 ROUTES.activity = async (arg, tab, query) => {
   for (const key of FEED_FILTERS) feed.filters[key] = query.get(key) || "";
   if (!query.has("since")) feed.filters.since = defaultFeedFilters().since;
@@ -1091,8 +1119,12 @@ ROUTES.activity = async (arg, tab, query) => {
   feed.lastOk = Date.now();
   feed.failing = false;
   if (viewer.admin && !feed.servers.length) feed.servers = (await gw("registry")).servers.map((s) => s.id);
-  const [toolData, ledger] = viewer.admin ? await Promise.all([gw("endpoint/tool-events?limit=100").catch(() => null), gw("policy/ledger").catch(() => null)]) : [null, null];
+  const alertQuery = new URLSearchParams({ limit: "200", ...(tab === "alerts" ? Object.fromEntries([...query].filter(([k, v]) => ["hours", "before"].includes(k) && v)) : {}) });
+  const [toolData, ledger, siem, alertData, incidentData, retention] = viewer.admin ? await Promise.all([gw("endpoint/tool-events?limit=100").catch(() => null),
+    gw("policy/ledger").catch(() => null), gw("audit/siem").catch(() => null), gw(`audit/alerts?${alertQuery}`).catch(() => null),
+    gw("audit/incidents").catch(() => null), gw("audit/retention").catch(() => null)]) : [null, null, null, null, null, null];
   if (ledger) policyLedger = ledger.policies || [];
+  loadedAlerts = alertData?.alerts || [];
   const servers = viewer.admin ? feed.servers : [...new Set(feed.rows.map((r) => r.server))].sort();
   const option = (value, label, cur) => html`<option value="${value}" ${value === cur ? raw("selected") : ""}>${label}</option>`;
   const f = feed.filters;
@@ -1117,17 +1149,17 @@ ROUTES.activity = async (arg, tab, query) => {
           </div>`;
   return {
     html: page({
-      head: head("호출 기록"),
+      head: head(viewer.admin ? "호출·감사" : "내 호출", { status: viewer.admin ? html`<a href="#/activity?t=audit">${siemChip(siem)}</a>` : "" }),
       active: tab || "live",
       tabs: [
-        { key: "live", label: "목록", body: html`<div class="feed-toolbar">
+        { key: "live", label: "호출 기록", body: html`<div class="chart-pair">${panel("호출 추이", chartBox("c-calls-trend", "필터 결과의 호출 추이", "xs"))}
+          ${panel("판정 분포", chartBox("c-decision-mix", "필터 결과의 판정 분포", "xs"))}</div><div class="feed-toolbar">
           <span class="live"><span class="dot" id="feed-dot"></span><span id="feed-live-state"></span><span aria-hidden="true">|</span><span id="feed-live-time"></span>
             <button class="feed-live-toggle" type="button" data-act="live" aria-pressed="${String(!feed.live)}" aria-label="${feed.live ? "일시정지" : "실시간 재개"}" title="${feed.live ? "일시정지" : "실시간 재개"}">${icon(feed.live ? "pause" : "play")}</button></span>
           <span class="feed-count" id="feed-status"></span>
-          ${viewer.admin ? auditTools() : ""}
         </div><section class="panel feed-panels">
           ${filters}
-          <div class="body flush"><div class="pager" data-feed-pager></div>${decisionTable([], "feed")}<div id="feed-empty" hidden></div><div class="pager" id="feed-pager" data-feed-pager></div></div></section>` },
+          <div class="body flush"><div class="pager" data-feed-pager></div>${callTable([], "feed")}<div id="feed-empty" hidden></div><div class="pager" id="feed-pager" data-feed-pager></div></div></section>` },
         { key: "stats", label: "분석", body: html`<section class="panel feed-panels">${filters}</section><div class="feed-toolbar analysis-toolbar">
           <span class="analysis-total" id="analysis-total">전체 ${analysis.total ?? 0}건</span>
           <span class="analysis-updated">갱신 시각 <span id="analysis-updated-time">${clockText(new Date(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span></span>
@@ -1139,7 +1171,10 @@ ROUTES.activity = async (arg, tab, query) => {
           ${viewer.admin ? html`${panel("엔드포인트별 호출", html`<div id="analysis-endpoints">${analysisEndpoints(analysis)}</div>`, { flush: true })}
             ${panel("사용자별 호출 판정", chartBox("c-by-person", "전체 호출의 사용자별 판정", "lg"))}` : ""}
           ${panel("응답 처리", chartBox("c-by-response", "전체 호출의 응답 처리 비율", "sm"))}</div>` },
-        ...(viewer.admin ? [endpointCallsTab(toolData)] : []),
+        ...(viewer.admin ? [endpointCallsTab(toolData),
+          { key: "alerts", label: "경보", n: alertData?.unread_count, hot: alertData?.unread_count > 0, body: alertsTab(alertData, query) },
+          { key: "incidents", label: "사고 보고", body: incidentsPanel(incidentData) },
+          { key: "audit", label: "감사 증빙", body: auditTab(retention) }] : []),
       ],
     }),
     charts: feedCharts(),
@@ -2710,21 +2745,33 @@ function alertGroups(alerts) {
   return [...groups.values()].map((rows) => ({ rows, first: rows.reduce((v,a) => a.created_at < v ? a.created_at : v, rows[0].created_at),
     last: rows.reduce((v,a) => a.created_at > v ? a.created_at : v, rows[0].created_at) }));
 }
-function groupedAlerts(alerts) {
-  return alerts.length ? html`<div class="stack">${alertGroups(alerts).map(({ rows, first, last }) => {
-    const a = rows[0], [target] = alertTarget(a);
-    const e = a.evidence || {};
-    const resource = [a.server_name || e.label || e.server_id, e.tool_name || e.tool || (a.origin === "endpoint-tool" ? e.place : "")].filter(Boolean).join(" · ");
-    return html`<details class="panel"><summary>${ALERT_KIND[a.kind] || "경보"} · ${target} · ${resource || short(alertDetail(a), 40) || "—"} · ${when(last, { seconds: true })} · ${rows.length}건</summary>
-      ${kv([["사유", alertDetail(a) || "—"], ["건수", rows.length], ["최초 시각", when(first)], ["최근 시각", when(last)]])}
-      <table class="data"><thead><tr><th>시각</th><th>종류</th><th>대상</th><th>내용</th></tr></thead><tbody>
-      ${rows.map((r) => html`<tr class="clickable" tabindex="0" data-act="alert-detail" data-id="${r.id}"><td class="nowrap">${when(r.created_at)}</td>
-        <td>${ALERT_KIND[r.kind] || "경보"}</td><td>${alertTarget(r)[0]}</td><td>${alertDetail(r) || "—"}</td></tr>`)}</tbody></table></details>`;
-  })}</div>` : empty("경보 없음");
-}
-const alertsTab = (alertData, q) => alertData ? html`${kv([["기간", q.get("hours") ? `최근 ${q.get("hours")}시간` : q.get("since") || q.get("until") ? `${when(q.get("since"))} — ${when(q.get("until"))}` : "전체"], ["표시", `${alertData.alerts.length}건`], ["전체", alertData.total ?? "—"]])}
-  ${groupedAlerts(alertData.alerts)}${alertData.has_more ? html`<a class="btn" href="#/security?${new URLSearchParams({ ...Object.fromEntries(q), t: "alerts", before: alertData.next_before })}">더 보기</a>` : ""}`
-  : empty("", { failed: true });
+const alertSeen = (a) => alertsSeen().some(([low, high]) => Number(a.id) >= low && Number(a.id) <= high);
+const alertsTab = (alertData, q) => {
+  if (!alertData) return empty("", { failed: true });
+  const only = q.get("alert_state") === "new";
+  const groups = alertGroups(alertData.alerts).filter(({ rows }) => !only || rows.some((a) => !alertSeen(a)));
+  const link = (label, state) => {
+    const next = new URLSearchParams(q);
+    next.set("t", "alerts"); next.delete("alert_state");
+    if (state) next.set("alert_state", state);
+    return html`<a class="btn sm" href="#/activity?${next}" ${(state === "new") === only ? raw('aria-current="true"') : ""}>${label}</a>`;
+  };
+  const more = new URLSearchParams(q);
+  more.set("t", "alerts");
+  if (alertData.next_before) more.set("before", alertData.next_before);
+  return html`<div class="feed-toolbar row-actions inbox-filters">${link("전체", "")}${link("신규", "new")}
+    <button class="btn sm" type="button" data-act="alerts-ack-all">모두 확인</button></div>
+    ${groups.length ? html`<table class="data rows-32"><thead><tr><th>시각</th><th>종류</th><th>대상</th><th>서버 · 도구</th><th>사유</th><th class="num">건수</th><th>상태</th><th></th></tr></thead><tbody>
+    ${groups.map(({ rows, last }) => {
+      const a = rows[0], [target] = alertTarget(a), e = a.evidence || {};
+      const resource = [a.server_name || e.label || e.server_id, e.tool_name || e.tool || (a.origin === "endpoint-tool" ? e.place : "")].filter(Boolean).join(" · ");
+      return html`<tr class="clickable" tabindex="0" data-act="alert-detail" data-id="${a.id}"><td class="nowrap">${when(last, { seconds: true })}</td>
+        <td>${chip("alert", ALERT_KIND[a.kind] || "경보")}</td><td class="cut">${target}</td><td class="cut">${resource || "—"}</td>
+        <td class="cut">${alertDetail(a) || "—"}</td><td class="num">${rows.length}</td>
+        <td>${rows.every(alertSeen) ? chip("outline", "확인") : chip("alert", "신규")}</td><td class="chev" aria-hidden="true">›</td></tr>`;
+    })}</tbody></table>` : empty("경보 없음", { filtered: only })}
+    ${alertData.has_more ? html`<a class="btn" href="#/activity?${more}">더 보기</a>` : ""}`;
+};
 let policyEvidence = {};
 let organizationPolicies = [];
 const organizationImplementation = (p) => ({ rego: "판정 코드", "rego+sensor": "판정 코드와 입력 연동", solution: "솔루션 기능" }[p.implementation] || "—");
@@ -2746,34 +2793,33 @@ const policyDeployLabel = (ledger, key) => typeof ledger.deployment?.[key] !== "
   : ledger.deployment[key] ? "일치" : "불일치";
 
 function auditTools() {
-  return html`<div class="row-actions"><button class="btn" data-act="audit-verify" title="전체 원장의 해시 사슬을 검증합니다.">무결성 검증</button><button class="btn primary" data-act="audit-export" title="현재 조회 조건의 감사 필드를 최대 500건씩 내보냅니다.">증빙 내보내기</button><button class="btn" id="audit-export-next" data-act="audit-export-next" hidden>다음 증빙 내보내기</button></div>`;
+  return html`<div class="row-actions"><button class="btn primary" data-act="audit-export" title="현재 조회 조건의 감사 필드를 최대 500건씩 내보냅니다.">증빙 내보내기</button><button class="btn" id="audit-export-next" data-act="audit-export-next" hidden>다음 증빙 내보내기</button></div>`;
 }
 
-ROUTES.security = async (_, tab, query = new URLSearchParams()) => {
-  if (!viewer.admin) throw new Error("접근 권한이 없습니다.");
-  const alertQuery = new URLSearchParams({ limit: "200", ...Object.fromEntries([...query].filter(([k, v]) => ["since", "until", "hours", "before"].includes(k) && v)) });
-  const [delivery, incidentData, alertData, ledger] = await Promise.all([gw("audit/siem").catch(() => null), gw("audit/incidents").catch(() => null),
-    gw(`audit/alerts?${alertQuery}`).catch(() => null), gw("policy/ledger").catch(() => null)]);
-  policyLedger = ledger?.policies || policyLedger;
-  loadedAlerts = alertData?.alerts || [];
-  if (tab === "alerts" && alertData) markAlertsSeen(alertData.alerts);
-  const pendingSince = delivery?.oldest_pending ? new Date(delivery.oldest_pending) : null;
-  const waitingMinutes = pendingSince ? Math.max(0, Math.floor((Date.now() - pendingSince.getTime()) / 60000)) : NaN;
-  const waiting = !Number.isFinite(waitingMinutes) ? "—" : waitingMinutes < 1 ? "1분 미만"
-    : waitingMinutes < 60 ? `${waitingMinutes}분`
-      : waitingMinutes < 1440 ? `${Math.floor(waitingMinutes / 60)}시간 ${waitingMinutes % 60}분`
-        : `${Math.floor(waitingMinutes / 1440)}일 ${Math.floor(waitingMinutes % 1440 / 60)}시간`;
-  return { html: page({ head: head("보안 관제"), active: tab || "integration", tabs: [
-    { key: "integration", label: "관제 연동", body: panel("보안 관제 전달", delivery ? kv([
-      ["미전달", delivery.pending], ["재시도 중", delivery.retrying],
-      ["최장 대기 시간", Number.isFinite(waitingMinutes) ? html`<span title="${dateTimeText(pendingSince)}">${waiting}</span>` : "—"],
-      ["최근 전달 성공", delivery.last_delivered ? when(delivery.last_delivered) : "—"]
-    ]) : html`<div class="note bad">조회 실패</div>`) },
-    { key: "incidents", label: "사고 보고", body: panel("사고 보고 기한", incidentData === null ? html`<div class="note bad">조회 실패</div>` : html`${incidentData.incidents.length ? html`<table class="data"><thead><tr><th>사고</th><th>관할·단계</th><th>기한</th><th>남은 시간</th><th>상태</th></tr></thead><tbody>${incidentData.incidents.flatMap((incident) => incident.deadlines.map((deadline) => html`<tr class="clickable" tabindex="0" data-act="incident-evidence" data-id="${incident.id}">
-        <td>${incident.title}<span class="sub">${when(incident.detected_at)}</span></td><td>${deadline.jurisdiction_name}<span class="sub">${deadline.stage_name}</span></td><td>${deadline.due_at ? when(deadline.due_at) : "—"}</td><td>${deadline.remaining_seconds == null ? "—" : `${deadline.remaining_seconds < 0 ? "초과 " : ""}${Math.floor(Math.abs(deadline.remaining_seconds) / 86400)}일 ${Math.floor(Math.abs(deadline.remaining_seconds) % 86400 / 3600)}시간`}</td><td>${deadline.status}</td></tr>`))}</tbody></table>` : empty("사고 기록 없음")}`, {flush:true, sub: incidentData ? `타이머 ${incidentData.timer_status}` : ""}) },
-    { key: "alerts", label: "경보", body: alertsTab(alertData, query) }
-  ] }) };
+const incidentsPanel = (incidentData) => panel("사고 보고 기한", incidentData === null ? html`<div class="note bad">조회 실패</div>` : html`${incidentData.incidents.length ? html`<table class="data"><thead><tr><th>사고</th><th>관할·단계</th><th>기한</th><th>남은 시간</th><th>상태</th></tr></thead><tbody>${incidentData.incidents.flatMap((incident) => incident.deadlines.map((deadline) => html`<tr class="clickable" tabindex="0" data-act="incident-evidence" data-id="${incident.id}">
+        <td>${incident.title}<span class="sub">${when(incident.detected_at)}</span></td><td>${deadline.jurisdiction_name}<span class="sub">${deadline.stage_name}</span></td><td>${deadline.due_at ? when(deadline.due_at) : "—"}</td><td>${deadline.remaining_seconds == null ? "—" : `${deadline.remaining_seconds < 0 ? "초과 " : ""}${Math.floor(Math.abs(deadline.remaining_seconds) / 86400)}일 ${Math.floor(Math.abs(deadline.remaining_seconds) % 86400 / 3600)}시간`}</td><td>${deadline.status}</td></tr>`))}</tbody></table>` : empty("사고 기록 없음")}`, {flush:true, sub: incidentData ? `타이머 ${incidentData.timer_status}` : ""});
+
+let lastVerify = null;
+const siemChip = (siem) => {
+  if (!siem) return chip("alert", "관제 전달 조회 실패");
+  if (!siem.configured) return chip("outline", "관제 전달 설정 안 됨");
+  if (siem.pending > 0) return chip("alert", `관제 전달 미전달 ${siem.pending}건`);
+  return chip("allow", siem.last_delivered ? `관제 전달 정상 · ${ago(siem.last_delivered)}` : "관제 전달 정상");
 };
+function auditTab(retention) {
+  const f = feed.filters;
+  const input = (key, label, type, value) => html`<label>${label}<input data-filter="${key}" type="${type}" value="${value}" aria-label="${label}" /></label>`;
+  return html`<div class="stack">
+    ${panel("무결성", kv([["결과", lastVerify ? chip(lastVerify.intact ? "allow" : "block", lastVerify.intact ? "정상" : "손상") : "—"],
+      ["검증 시각", lastVerify ? when(lastVerify.at, { seconds: true }) : "—"], ["검증 건수", lastVerify?.checked ?? "—"]]),
+      { end: html`<button class="btn" type="button" data-act="audit-verify">지금 검증</button>` })}
+    ${panel("보존 기간", retention ? kv([["보존 기간", `${retention.days}일`], ["관할", (retention.jurisdictions || []).join(", ") || "—"],
+      ["하한", `${retention.floor_days}일`], ["변경", retention.updated_at ? when(retention.updated_at) : "—"]]) : empty("", { failed: true }),
+      { end: retention ? html`<button class="btn" type="button" data-act="audit-retention" data-days="${retention.days}" data-floor="${retention.floor_days}"
+        data-jurisdictions="${JSON.stringify(retention.jurisdictions || [])}">변경</button>` : "" })}
+    ${panel("내보내기", html`<div class="filters">${input("since", "시작", "datetime-local", dateTimeInput(f.since))}${input("until", "종료", "datetime-local", dateTimeInput(f.until))}
+      ${input("policy", "정책", "search", f.policy)}${auditTools()}</div>`)}</div>`;
+}
 
 const EVENT_KIND = { "tools/call": "도구 호출", "mcp-connection": "연결 거부" };
 const TOOL_PATH = { gateway: ["brand", "게이트웨이"], connector: ["restrict", "커넥터"], local: ["alert", "로컬 MCP"] };
@@ -2903,7 +2949,7 @@ const ACTIONS = {
     if (seq !== routeSeq || detail !== detailSeq) return;
     rememberDetail(a.id, "alert-detail");
     openDrawer("경보", kv([["사유", alertDetail(a) || ALERT_KIND[a.kind] || "—"],
-      ["실행", a.execution || "미확인"], ["조치", href ? html`<a class="btn sm" href="${href}">${a.kind === "unapproved-endpoint-mcp" || (a.evidence?.policy_id || "").startsWith("MCP-SHADOW-") ? "미등록 MCP 보기" : "대상 보기"}</a>` : "—"],
+      ["실행", a.execution || "미확인"], ["조치", href || alertCallsHref(a) ? html`${href ? html`<a class="btn sm" href="${href}">${a.kind === "unapproved-endpoint-mcp" || (a.evidence?.policy_id || "").startsWith("MCP-SHADOW-") ? "미등록 MCP 보기" : "대상 보기"}</a>` : ""}${alertCallsHref(a) ? html`<a class="btn sm" href="${alertCallsHref(a)}">관련 호출</a>` : ""}` : "—"],
       ["종류", ALERT_KIND[a.kind] || "—"], ["대상", target], ["엔드포인트 식별자", a.evidence?.endpoint_id || "—"], ["시각", when(a.created_at)]]));
   },
   async "audit-event"(el) {
@@ -2987,7 +3033,6 @@ const ACTIONS = {
     for (const p of scope.querySelectorAll(":scope > .tabpanel")) p.hidden = p.dataset.panel !== key;
     if (!el.closest(".drawer")) {
       rememberTab(key);
-      if (key === "alerts") markAlertsSeen(loadedAlerts);
     } else {
       const q = new URLSearchParams(current.query); q.set("dt", key);
       current.query = q; history.replaceState(history.state, "", routeHash(q));
@@ -3162,8 +3207,21 @@ const ACTIONS = {
   },
   async "audit-verify"() {
     const r = await gw("audit/verify");
+    lastVerify = { ...r, at: new Date().toISOString() };
     if (r.intact) toast(`무결성 정상 · ${r.checked}건`);
     else toast(`무결성 손상 · #${r.broken_at ?? "마지막"}: ${r.reason}`, true);
+    reload();
+  },
+  async "audit-retention"(el) {
+    const fd = await ask({ title: "보존 기간 변경", fields: field.text("days", "보존 일수", `type="number" required min="${el.dataset.floor}" step="1"`, el.dataset.days), confirm: "저장" });
+    if (!fd) return;
+    await gw("audit/retention", { method: "PUT", body: { days: Number(fd.get("days")), jurisdictions: JSON.parse(el.dataset.jurisdictions || "[]") } });
+    toast("보존 기간을 저장했습니다.");
+    reload();
+  },
+  "alerts-ack-all"() {
+    markAlertsSeen(loadedAlerts);
+    reload();
   },
   async approve(el) {
     const a = approvalRows.find((row) => row.id === el.dataset.id);
@@ -3847,7 +3905,7 @@ Object.assign(ACTIONS, inboxActions(inboxContext()));
 
 document.addEventListener("click", (event) => {
   for (const open of document.querySelectorAll("details.row-menu[open]")) {
-    if (!open.contains(event.target) || event.target.closest(".menu button")) open.open = false;
+    if (!open.contains(event.target) || event.target.closest(".menu button, .menu a")) open.open = false;
   }
 });
 document.addEventListener("keydown", (event) => {
@@ -4121,7 +4179,6 @@ async function boot() {
   const mobile = matchMedia("(max-width: 900px)");
   setNavCollapsed(mobile.matches || localStorage.getItem(NAV_KEY) === "true");
   mobile.addEventListener("change", () => setNavCollapsed(mobile.matches || localStorage.getItem(NAV_KEY) === "true"));
-  $("#app-identity").textContent = `${viewer.name} · ${t(viewer.role_label)}`;
   window.addEventListener("hashchange", route);
   await route();
   if (viewer.kit && viewer.managed_required && !(viewer.managed_devices || []).some((d) => d.status === "active" && d.managed_state === "active")) {
