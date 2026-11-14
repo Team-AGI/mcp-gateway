@@ -545,7 +545,7 @@ async function route() {
     if (at.query.get("d") && /^\d+$/.test(at.query.get("d"))) await showDecision(at.query.get("d"));
     else if (["config", "listener", "os-event"].includes(at.query.get("record_kind")) && /^\d+$/.test(at.query.get("record_id") || ""))
       await ACTIONS["endpoint-record"]({ dataset: { kind: at.query.get("record_kind"), id: at.query.get("record_id") } });
-    else if (["approval", "relationship", "intake-report", "audit-event", "alert-detail", "incident-evidence", "integration", "policy", "connector", "target"].includes(at.query.get("detail_kind")) && at.query.get("detail_id"))
+    else if (["approval", "relationship", "intake-report", "audit-event", "alert-detail", "incident-evidence", "integration", "policy", "connector", "target", "endpoint-device"].includes(at.query.get("detail_kind")) && at.query.get("detail_id"))
       await ACTIONS[at.query.get("detail_kind")]({ dataset: { id: at.query.get("detail_id"), key: at.query.get("detail_id") } });
   } catch (error) {
     if (seq === routeSeq) view.innerHTML = String(empty("", { failed: true }));
@@ -1817,68 +1817,91 @@ ROUTES.people = async (_, tab, query = new URLSearchParams()) => {
 };
 
 const MANAGED_STATE = { active: "활성", pending: "활성화 대기", quarantined: "격리" };
+const MANAGED_TONE = { active: "allow", pending: "approval", quarantined: "block" };
 const deviceQuery = (query = current.query, keys = ["endpoint", "q", "state"]) => new URLSearchParams([...query].filter(([k, v]) => keys.includes(k) && v));
 const listFilter = (list) => deviceQuery(current.query, list === "full_entries" ? undefined : ["endpoint"]);
+let endpointList = [];
+const endpointState = (r) => r.managed_state && MANAGED_STATE[r.managed_state] ? chip(MANAGED_TONE[r.managed_state], MANAGED_STATE[r.managed_state]) : chip("outline", "관리되지 않음");
+const endpointActions = (r) => html`${["pending", "quarantined"].includes(r.managed_state) && r.policy_hash ? html`<button class="btn sm primary" type="button" data-act="device-activate" data-id="${r.endpoint_id}" data-hash="${r.policy_hash}">활성화</button>` : ""}`;
 ROUTES.endpoints = async (_, tab, query = new URLSearchParams()) => {
   const filter = deviceQuery(query);
   const [{ accounts }, inv, o, p] = await Promise.all([
     api("/api/accounts"), gw(`endpoint/inventory${filter.size ? `?${filter}` : ""}`), gw("overview"), planes()]);
   peopleAccounts = accounts;
-  const [entriesPage, discovery] = await Promise.all([covPage(inv, "full_entries", ""), discoveryTab(query)]);
   const option = (value, label, cur) => html`<option value="${value}" ${value === cur ? raw("selected") : ""}>${label}</option>`;
-  const deviceState = Object.fromEntries(p.devices.filter((d) => d.endpoint_id).map((d) => [d.endpoint_id, d]));
-  const harnessOf = Object.fromEntries(o.workstations.map((w) => [w.endpoint_id, w]));
-  const selectedIds = new Set(inv.agents.map((a) => a.endpoint_id));
-  const devices = filter.size ? p.devices.filter((d) => selectedIds.has(d.endpoint_id)) : p.devices;
-  const selected = inv.agents.find((a) => a.endpoint_id === query.get("endpoint"));
-  const managed = inv.agents.filter((a) => a.managed_state && a.managed_state !== "unmanaged");
+  const all = endpointRows(inv.agents, p.devices, o.workstations, accounts);
+  const silentOnly = query.get("silent") === "1";
+  const rows = filterEndpoints(all, { silent: silentOnly });
+  endpointList = all;
+  const cards = endpointCards(all), mix = managedMix(all), ages = reportAges(all);
   return {
     html: page({
-      head: head("엔드포인트 관리", { actions: html`<button class="btn" type="button" data-act="device-issue">엔드포인트 등록</button>` }),
-      kpis: kpiStrip([["최근 15분 보고", inv.coverage.reporting_recently],
-        ["격리", managed.filter((a) => a.managed_state === "quarantined").length, "block"],
-        ["활성화 대기", managed.filter((a) => a.managed_state === "pending").length, "approval"]]),
-      active: ["devices", "managed", "shadow"].includes(tab) ? tab : "devices",
+      head: head("엔드포인트", { actions: html`<button class="btn" type="button" data-act="device-issue">엔드포인트 등록</button>` }),
+      kpis: html`${kpiStrip([["등록 PC", cards.total, "", "#/endpoints?t=devices"], ["최근 15분 보고", cards.reporting, "allow"],
+        ["15분 이상 미보고", cards.silent, cards.silent ? "alert" : "", "#/endpoints?t=devices&silent=1"],
+        ["격리", cards.quarantined, "block", "#/endpoints?t=devices&state=quarantined"],
+        ["활성화 대기", cards.pending, "approval", "#/endpoints?t=devices&state=pending"]])}
+        ${chartRow(["관리 상태", "c-endpoint-state", "엔드포인트 관리 상태"], ["마지막 보고", "c-endpoint-age", "마지막 보고 경과"])}`,
+      active: ["devices", "managed"].includes(tab) ? tab : "devices",
       tabs: [
-        { key: "devices", label: "엔드포인트", n: inv.agents.length, body: html`<div class="stack">
-          ${panel("조회 조건", html`<form class="filters" data-form="devices">
-            <label>검색<input type="search" name="q" maxlength="120" value="${query.get("q") || ""}" aria-label="사용자·호스트·엔드포인트 검색" /></label>
-            <label>엔드포인트<input name="endpoint" maxlength="200" value="${query.get("endpoint") || ""}" /></label>
-            <label>관리 상태<select name="state">${option("", "전체", query.get("state"))}${Object.entries({ ...MANAGED_STATE, unmanaged: "관리되지 않음" }).map(([k,v]) => option(k,v,query.get("state")))}</select></label>
-            <button type="submit" class="btn primary">조회</button><a class="btn" href="#/endpoints?t=devices">초기화</a></form>`)}
-          ${selected ? panel("선택 기기", kv([["사용자", selected.owner_name || harnessOf[selected.endpoint_id]?.display_name || "—"], ["호스트", selected.hostname || "—"],
-            ["PC 계정", deviceState[selected.endpoint_id]?.account || selected.local_username || "—"], ["엔드포인트", selected.endpoint_id], ["관리 상태", MANAGED_STATE[selected.managed_state] || "—"]])) : ""}
-          ${panel("엔드포인트", html`<table class="data"><thead><tr><th>엔드포인트</th><th>호스트</th><th>PC 계정</th><th>사용자</th><th>하네스</th><th>상태</th><th>마지막 보고</th><th></th></tr></thead><tbody>
-            ${inv.agents.map((a) => html`<tr><td><a href="#/endpoints?t=devices&endpoint=${encodeURIComponent(a.endpoint_id)}">${entityRef(a.endpoint_id)}</a><span class="sub">${PLATFORM[String(a.platform || "").toLowerCase()] || a.platform || ""}</span></td><td>${a.hostname || "—"}</td><td>${deviceState[a.endpoint_id]?.account || a.local_username || "—"}</td><td>${a.owner_name || harnessOf[a.endpoint_id]?.display_name || "—"}</td>
-              <td>${harnessOf[a.endpoint_id]?.harness ? chip("plain", harnessLabel(harnessOf[a.endpoint_id].harness)) : NONE}</td>
-              <td>${deviceState[a.endpoint_id] ? statusPair(deviceState[a.endpoint_id]) : chip("outline", "관찰만")}
-                ${a.managed_state && a.managed_state !== "unmanaged" ? html`<span class="sub">${MANAGED_STATE[a.managed_state] || a.managed_state} · ${MANAGED_MODE[deviceState[a.endpoint_id]?.mode] || "—"}</span>` : ""}</td>
-              <td class="small nowrap">${ago(a.last_seen_at)}</td>
-              <td class="num nowrap">${a.status === "revoked" ? chip("outline", "등록 해제됨") : html`<button class="btn sm danger" type="button" data-act="device-revoke" data-id="${a.endpoint_id}">등록 해제</button>`}
-                ${["pending", "quarantined"].includes(a.managed_state) && a.policy_hash ? html`<button class="btn sm primary" type="button" data-act="device-activate" data-id="${a.endpoint_id}" data-hash="${a.policy_hash}">활성화</button>` : ""}</td></tr>`)}
-            </tbody></table>${inv.agents.length ? "" : empty("엔드포인트 없음", { filtered: filter.size > 0 })}`, { flush: true,
-            tools: html`<label>새 PC 활성화<select data-act-change="endpoint-auto" aria-label="새 PC 활성화">${option("on", "자동", inv.settings?.auto_activate === false ? "off" : "on")}${option("off", "관리자 확인", inv.settings?.auto_activate === false ? "off" : "on")}</select></label>` })}
-          ${panel("통제 점검",
-          html`<table class="data"><thead><tr><th>엔드포인트</th><th>호스트</th><th>PC 계정</th><th>사용자</th><th>플랫폼</th><th>상태</th><th>관리 계정</th><th>점검</th><th>우회 경로</th></tr></thead><tbody>
-            ${devices.map((d) => html`<tr><td>${d.endpoint_id ? entityRef(d.endpoint_id) : NONE}</td><td>${d.hostname || "—"}</td><td>${d.account || "—"}</td>
-              <td>${accounts.find((a) => a.token === d.owner)?.display_name || d.owner || "—"}</td><td>${PLATFORM[d.platform] || d.platform || "—"}</td><td>${statusPair(d)}</td>
-              <td>${d.account_state ? controlChip(d.account_state) : NONE}</td>
-              <td>${checksChip(d.checks)}</td>
-              <td class="small">${(d.bypass || []).length ? html`<div class="pill-list">${d.bypass.map((b) => chip("block", b))}</div>` : NONE}
-                ${denialCount(d) ? html`<span class="sub">엔드포인트 차단 24시간 ${denialCount(d)}</span>` : ""}</td></tr>`)}
-            </tbody></table>${devices.length ? "" : empty("엔드포인트 없음", { filtered: filter.size > 0 })}`, { flush: true })}
-          ${endpointSettings(entriesPage, "full_entries")}</div>` },
-        discovery,
+        { key: "devices", label: "엔드포인트", n: all.length, body: panel("엔드포인트", html`<table class="data"><thead><tr><th>사용자</th><th>호스트</th><th>상태</th><th>마지막 보고</th><th>하네스</th><th class="num">발견 MCP</th><th class="num">호출 24시간</th><th></th></tr></thead><tbody>
+            ${rows.map((r) => html`<tr class="clickable" tabindex="0" data-act="endpoint-device" data-id="${r.endpoint_id}">
+              <td><b>${r.owner || "—"}</b></td><td>${r.hostname || "—"} <span class="muted small">${PLATFORM[String(r.platform || "").toLowerCase()] || r.platform || ""}</span></td>
+              <td>${endpointState(r)} ${r.device ? checksChip(r.device.checks) : ""}</td>
+              <td class="small nowrap ${isSilent(r) ? "bad-text" : ""}">${ago(r.last_seen_at)}</td>
+              <td>${r.harness ? chip("plain", harnessLabel(r.harness)) : NONE}</td>
+              <td class="num">${r.shadow ? html`<a href="#/connections?${new URLSearchParams({ t: "shadow", endpoint: r.endpoint_id })}">${chip("block", r.shadow)}</a>` : NONE}</td>
+              <td class="num">${r.calls}</td><td class="num nowrap">${endpointActions(r)}</td></tr>`)}
+            </tbody></table>${rows.length ? "" : empty("엔드포인트 없음", { filtered: filter.size > 0 || silentOnly })}`, { flush: true,
+            tools: html`<form class="filters" data-form="devices"><input type="search" name="q" maxlength="120" value="${query.get("q") || ""}" placeholder="사용자·호스트 검색" aria-label="사용자·호스트·엔드포인트 검색" />
+              <select name="state" aria-label="관리 상태">${option("", "전체", query.get("state"))}${Object.entries({ ...MANAGED_STATE, unmanaged: "관리되지 않음" }).map(([k, v]) => option(k, v, query.get("state")))}</select>
+              <label class="check"><input type="checkbox" name="silent" value="1" ${silentOnly ? raw("checked") : ""} /> 15분 이상 미보고</label>
+              <button type="submit" class="btn primary">조회</button><a class="btn" href="#/endpoints?t=devices">초기화</a></form>
+              <label>새 PC 활성화<select data-act-change="endpoint-auto" aria-label="새 PC 활성화">${option("on", "자동", inv.settings?.auto_activate === false ? "off" : "on")}${option("off", "관리자 확인", inv.settings?.auto_activate === false ? "off" : "on")}</select></label>` }) },
         { key: "managed", label: "연결 이력", n: (inv.managed_events || []).length,
           body: panel("연결 이력", html`<table class="data"><thead><tr><th>시각</th><th>사용자·엔드포인트</th><th>내용</th><th>사유</th></tr></thead><tbody>
-            ${(inv.managed_events || []).map((e) => html`<tr><td class="nowrap">${when(e.observed_at)}</td><td>${e.owner_name || "사용자 확인 불가"}<span class="sub mono">${e.endpoint_id || "—"}</span></td>
+            ${(inv.managed_events || []).map((e) => html`<tr><td class="nowrap">${when(e.observed_at)}</td><td>${e.owner_name || "사용자 확인 불가"} <span class="muted mono small">${e.endpoint_id || "—"}</span></td>
               <td>${chip(...(MANAGED_EVENT[e.kind] || ["", e.kind]))}</td><td class="small">${managedEventDetail(e.detail)}</td></tr>`)}</tbody></table>
             ${(inv.managed_events || []).length ? "" : empty("연결 이력 없음")}`, { flush: true }) },
-
       ],
     }),
+    charts: {
+      "c-endpoint-state": () => charts.donut([{ name: "활성", value: mix.active, color: charts.color("Allow") }, { name: "활성화 대기", value: mix.pending, color: charts.color("Approval") },
+        { name: "격리", value: mix.quarantined, color: charts.color("Block") }, { name: "MINT 미적용", value: mix.unmanaged, color: charts.color("") }]),
+      "c-endpoint-age": () => charts.bars([{ name: "15분 이내", value: ages.quarter, color: charts.color("Allow") }, { name: "1시간 이내", value: ages.hour },
+        { name: "24시간 이내", value: ages.day, color: charts.color("Alert") }, { name: "그 이상", value: ages.older, color: charts.color("Block") }],
+        { unit: "", onClick: (e) => { if (e.dataIndex === 3) location.hash = "#/endpoints?t=devices&silent=1"; } }),
+    },
   };
 };
+
+async function showEndpoint(id) {
+  const seq = routeSeq, detail = ++detailSeq;
+  const [inv, net] = await Promise.all([gw(`endpoint/inventory?${new URLSearchParams({ endpoint: id })}`), gw("endpoint/network-quality").catch(() => null)]);
+  if (seq !== routeSeq || detail !== detailSeq) return;
+  const r = endpointList.find((row) => row.endpoint_id === id) || inv.agents.find((a) => a.endpoint_id === id);
+  if (!r) return;
+  const device = r.device || null, link = (net?.devices || []).find((d) => d.endpoint_id === id);
+  const events = (inv.managed_events || []).filter((e) => e.endpoint_id === id);
+  rememberDetail(id, "endpoint-device");
+  openDrawer(r.hostname || id, html`<div class="row-actions">${endpointState(r)} ${device ? statusPair(device) : chip("outline", "관찰만")}
+      ${endpointActions(r)}${r.status === "revoked" ? chip("outline", "등록 해제됨") : html`<button class="btn sm danger" type="button" data-act="device-revoke" data-id="${id}">등록 해제</button>`}</div>`, [
+    { key: "checks", label: "통제 점검", body: html`<div class="stack">${kv([["사용자", r.owner || "—"], ["PC 계정", device?.account || r.local_username || "—"], ["엔드포인트", html`<code>${id}</code>`],
+        ["플랫폼", PLATFORM[String(r.platform || "").toLowerCase()] || r.platform || "—"], ["관리 방식", MANAGED_MODE[device?.mode] || "—"],
+        ["관리 계정", device?.account_state ? controlChip(device.account_state) : "—"], ["엔드포인트 차단 24시간", device ? denialCount(device) || "—" : "—"]])}
+      ${device && Object.keys(device.checks || {}).length ? html`<table class="data"><thead><tr><th>점검 항목</th><th>결과</th></tr></thead><tbody>
+        ${Object.entries(device.checks).map(([k, v]) => html`<tr><td>${CHECK_LABEL[k] || k}</td><td>${v ? chip("allow", "정상") : chip("block", "미충족")}</td></tr>`)}</tbody></table>` : empty("점검 결과 없음")}
+      ${(device?.bypass || []).length ? html`<div class="pill-list">${device.bypass.map((b) => chip("block", b))}</div>` : ""}</div>` },
+    { key: "configs", label: "MCP 설정", n: inv.entries.length, body: inv.entries.length ? html`<table class="data"><thead><tr><th>서버</th><th>설정 파일</th><th>분류</th><th>증거</th></tr></thead><tbody>
+      ${inv.entries.map((e) => recordRow("config", e.id, html`<td><b>${e.server_label}</b></td><td class="small mono address">${e.config_path}</td>
+        <td>${chip(...(ENDPOINT_CLASS[e.classification] || ["outline", "확인 불가"]))}</td><td>${evidenceChip(e.provenance_state)}</td>`))}</tbody></table>` : empty("MCP 설정 없음") },
+    { key: "history", label: "이력", n: events.length, body: events.length ? html`<table class="data"><thead><tr><th>시각</th><th>내용</th><th>사유</th></tr></thead><tbody>
+      ${events.map((e) => html`<tr><td class="nowrap">${when(e.observed_at)}</td><td>${chip(...(MANAGED_EVENT[e.kind] || ["", e.kind]))}</td><td class="small">${managedEventDetail(e.detail)}</td></tr>`)}</tbody></table>` : empty("연결 이력 없음") },
+    { key: "link", label: "통신 품질", body: link ? kv([["중앙값", link.state === "fresh" ? msText(link.rtt_p50_ms) : "—"], ["P95", link.state === "fresh" ? msText(link.rtt_p95_ms) : "—"],
+      ["흔들림", link.state === "fresh" ? msText(link.jitter_ms) : "—"], ["실패율", link.state === "fresh" ? pctText(link.failure_pct) : "—"], ["측정", link.probes ?? "—"], ["측정 시각", when(link.measured_at)]])
+      : empty(net === null ? "조회 실패" : "측정 없음") },
+  ]);
+}
 
 function intakeStatus(form, message, field = null) {
   const status = form.querySelector("[data-intake-status]");
@@ -3017,6 +3040,7 @@ const ACTIONS = {
     }
   },
   decision: (el) => showDecision(el.dataset.id),
+  "endpoint-device": (el) => showEndpoint(el.dataset.id),
   relationship: (el) => showRelationship(el.dataset.id),
   approval: (el) => showApproval(el.dataset.id),
   "approval-refresh": () => refreshApprovalLists(true),

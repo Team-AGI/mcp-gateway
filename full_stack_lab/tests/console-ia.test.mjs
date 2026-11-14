@@ -234,8 +234,8 @@ test("신청 실패는 입력과 도구 선택을 남기고 해당 필드를 접
   assert.equal(form.dataset.submitting, "false");
 });
 
-test("엔드포인트 검색·상태·선택은 세 표를 같은 ID로 좁히고 식별값을 분리한다", async () => {
-  const ui = build(), q = new URLSearchParams("t=devices&q=kim&state=pending&endpoint=ep1");
+test("엔드포인트 표는 검색·상태 조건으로 좁히고 한 표에 사용자·호스트·상태를 모은다", async () => {
+  const ui = build(), q = new URLSearchParams("t=devices&q=kim&state=pending&silent=1");
   ui.setCurrent({ page: "endpoints", arg: "", query: q });
   const inventory = { ...ui.inventory, agents: [{ endpoint_id: "ep1", hostname: "host-one", owner_name: "직원 이름", managed_state: "pending", local_username: "pc-user", status: "active" }] };
   ui.responses["/gw/endpoint/inventory?q=kim&state=pending&endpoint=ep1"] = inventory;
@@ -245,10 +245,14 @@ test("엔드포인트 검색·상태·선택은 세 표를 같은 ID로 좁히�
   ] };
   const out = await ui.ROUTES.endpoints("", "devices", q);
   const body = String(out.html.tabs.find((tab) => tab.key === "devices").body);
-  assert.match(body, /選択|선택 기기/); assert.match(body, /<dl class="kv">/);
-  assert.match(body, /<dt>호스트<\/dt><dd>host-one/); assert.match(body, /<dt>PC 계정<\/dt><dd>pc-user/);
-  assert.match(body, /직원 이름/); assert.doesNotMatch(body, /host-other|other-user/);
-  assert.match(body, /name="q"[^>]*value="kim"/); assert.match(body, /value="pending" selected/);
+  assert.match(body, /<th>사용자<\/th><th>호스트<\/th><th>상태<\/th><th>마지막 보고<\/th>/);
+  assert.match(body, /직원 이름/); assert.match(body, /host-one/); assert.match(body, /활성화 대기/); assert.match(body, /미충족 설정 보호/);
+  assert.match(body, /data-act="endpoint-device" data-id="ep1"/); assert.match(body, /data-act="device-activate"/);
+  assert.match(body, /name="q"[^>]*value="kim"/); assert.match(body, /value="pending" selected/); assert.match(body, /name="silent" value="1"\s+checked/);
+  assert.doesNotMatch(body, /통제 점검<\/h2>|엔드포인트 MCP 설정/);
+  assert.match(String(out.html.kpis), /등록 PC[^]*최근 15분 보고[^]*15분 이상 미보고[^]*격리[^]*활성화 대기/);
+  assert.match(String(out.html.kpis), /c-endpoint-state[^]*c-endpoint-age/);
+  assert.deepEqual(Object.keys(out.charts), ["c-endpoint-state", "c-endpoint-age"]);
 });
 
 test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기록 상세를 함께 연다", async () => {
@@ -1014,8 +1018,7 @@ test("전체 설정과 발견 항목의 페이지 커서는 독립적이다", as
   ui.setCurrent({ page: "endpoints", arg: "", query: new URLSearchParams("full_entries_cursor=&full_entries_cursor=all-2&full_entries_page=1&entries_cursor=&entries_cursor=shadow-2&entries_page=1") });
   ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=all-2"] = { rows: [], next_cursor: "all-3" };
   ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=shadow-2&classification=shadow%2Cretired-residue"] = { rows: [], next_cursor: "shadow-3" };
-  await ui.ROUTES.endpoints("", "shadow");
-  assert.equal(ui.covPaging.full_entries.next, "all-3");
+  await ui.ROUTES.connections("", "shadow");
   assert.equal(ui.covPaging.entries.next, "shadow-3");
 });
 
@@ -1183,11 +1186,15 @@ test("사용 기한은 실제 날짜로 계산하고 없거나 잘못된 날짜�
 
 test("미등록 MCP는 혼합 합계 없이 설정·수신기·차단 건수를 분리한다", async () => {
   const ui = build();
-  Object.assign(ui.inventory.pages.entries, { total: 7 });
-  Object.assign(ui.inventory.pages.listeners, { total: 3 });
-  Object.assign(ui.inventory.pages.os_events, { total: 0 });
-  const shadow = (await ui.ROUTES.endpoints("", "shadow", new URLSearchParams())).html.tabs.find((item) => item.key === "shadow");
-  assert.equal(shadow.n, undefined);
+  Object.assign(ui.inventory.pages.entries, { total: 3 });
+  ui.inventory.entries = [
+    { id: 1, endpoint_id: "ep1", server_label: "Docs", transport: "stdio", endpoint_ref: "npx docs", classification: "shadow", reported_at: "2026-11-10T00:00:00Z", config_path: "/a" },
+    { id: 2, endpoint_id: "ep2", server_label: "Docs", transport: "stdio", endpoint_ref: "npx docs", classification: "shadow", reported_at: "2026-11-11T00:00:00Z", config_path: "/b" },
+    { id: 3, endpoint_id: "ep1", server_label: "Old", transport: "sse", endpoint_ref: "https://old", classification: "retired-residue", reported_at: "2026-11-09T00:00:00Z", config_path: "/c" }];
+  ui.inventory.agents = [{ endpoint_id: "ep1", shadow: 2, status: "active" }, { endpoint_id: "ep2", shadow: 1, status: "active" }, { endpoint_id: "ep3", shadow: 0, status: "active" }];
+  const out = await ui.ROUTES.connections("", "shadow", new URLSearchParams());
+  const shadow = out.html.tabs.find((item) => item.key === "shadow");
+  assert.equal(shadow.n, 2);
   const markup = String(shadow.body);
   for (const [label, value] of [["설정 기록", 7], ["수신기 관측", 3], ["엔드포인트 차단", 0]]) assert.ok(markup.includes(`<dt>${label}</dt><dd>${value}</dd>`));
   assert.match(markup, /표시 서버 0개/);
