@@ -1028,7 +1028,6 @@ export const EN = {
   "집행 주체": "Enforcement component",
   "정의된 결과": "Defined outcome",
   "연결 점검 필요": "Connection check needed",
-  "처리 위치 검토": "Review processing location",
   "통제 미검증": "Control unverified",
   "차단 발생 서버": "Servers with blocks",
   "서버별 24시간 호출 판정": "Decisions by server, 24h",
