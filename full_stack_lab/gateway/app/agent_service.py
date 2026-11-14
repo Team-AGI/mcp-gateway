@@ -1389,12 +1389,11 @@ async def keep_approved_branch(client: httpx.AsyncClient, path: str, default: st
             await client.delete(f"{path}/branches/{quote(branch, safe='')}")
 
 
-async def internal_repo_description(url: str, row: dict) -> str:
-    """One upstream repository can hold several approved servers (fetch, time …): name them all."""
-    rows = await db.fetch_all(
-        "SELECT display_name FROM mcp_intake_requests WHERE internal_repo_url=%s AND status='APPROVED'", (url,))
-    names = sorted({r["display_name"] for r in rows if r.get("display_name")} | {row.get("display_name") or url.rsplit("/", 1)[-1]})
-    return f"{' · '.join(names)} · 검증 커밋 {row['commit_sha'][:12]}"
+def internal_repo_description(previous: str, row: dict) -> str:
+    """One upstream repository can hold several approved servers (fetch, time …): keep the names already listed."""
+    names = set(previous.split(" · ")[:-1]) if " · 검증 커밋 " in (previous or "") else set()
+    names.add(row.get("display_name") or "MCP")
+    return f"{' · '.join(sorted(names))} · 검증 커밋 {row['commit_sha'][:12]}"
 
 
 async def publish_internal_repo(row: dict) -> tuple[str, dict]:
@@ -1440,11 +1439,10 @@ async def publish_internal_repo(row: dict) -> tuple[str, dict]:
             checked = {"match": True, "source": "internal-repo-archive", "sha256": actual["sha256"],
                        "files": actual["files"], "bytes": actual["bytes"]}
             await keep_approved_branch(client, path, info["default_branch"])
-            public = os.getenv("GITEA_PUBLIC_URL", "http://localhost:3000").rstrip("/")
             published = await client.patch(path, json={
                 "private": False, "has_issues": True, "has_pull_requests": False, "has_wiki": False,
                 "website": row["repository_url"],
-                "description": await internal_repo_description(f"{public}/{org}/{name}", row)})
+                "description": internal_repo_description(info.get("description") or "", row)})
             if not published.is_success:
                 raise HTTPException(502, f"직원 읽기 권한 게시 실패 (Gitea {published.status_code}).")
     except httpx.HTTPError as exc:

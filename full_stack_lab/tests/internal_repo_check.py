@@ -38,11 +38,11 @@ class InternalRepoChecks(unittest.IsolatedAsyncioTestCase):
         await ns["keep_approved_branch"](gitea, "/api/v1/repos/mcp/servers", "main")
         self.assertEqual(gitea.branches, ["main"])
 
-    async def test_description_names_every_server_from_the_repository(self):
-        db = NS(fetch_all=AsyncMock(return_value=[{"display_name": "Fetch"}, {"display_name": "Time"}]))
-        ns = load({"internal_repo_description"}, {"db": db})
-        text = await ns["internal_repo_description"]("https://h/git/mcp/servers", {"display_name": "Git", "commit_sha": "e1dc4b18dbb9aa"})
+    def test_description_keeps_every_server_from_the_repository(self):
+        ns = load({"internal_repo_description"}, {})
+        text = ns["internal_repo_description"]("Fetch · Time · 검증 커밋 0123456789ab", {"display_name": "Git", "commit_sha": "e1dc4b18dbb9aa"})
         self.assertEqual(text, "Fetch · Git · Time · 검증 커밋 e1dc4b18dbb9")
+        self.assertEqual(ns["internal_repo_description"]("", {"display_name": "Time", "commit_sha": "e1dc4b18dbb9aa"}), "Time · 검증 커밋 e1dc4b18dbb9")
 
 
 if __name__ == "__main__":
