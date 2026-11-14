@@ -3,7 +3,6 @@ import ast
 import unittest
 from pathlib import Path
 from types import SimpleNamespace as NS
-from unittest.mock import AsyncMock
 from urllib.parse import quote
 
 APP = Path(__file__).resolve().parents[1] / "gateway" / "app"
