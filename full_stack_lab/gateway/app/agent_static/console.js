@@ -1736,28 +1736,46 @@ const managedEventDetail = (d) => (d && (d.reason || d.note || (d.actor ? `처�
 
 let peopleAccounts = [];
 let integrationItems = [];
+const chartRow = (...boxes) => html`<div class="grid c${boxes.length} chart-row">${boxes.map(([title, id, label]) => panel(title, chartBox(id, label, "sm")))}</div>`;
+const sinceDay = () => new URLSearchParams({ event_kind: "tools/call", since: new Date(Date.now() - 86400000).toISOString(), until: new Date().toISOString() });
+const PC_STAGE = { none: ["outline", "—"], signed: ["outline", "가입"], installed: ["approval", "설치 보고"], active: ["allow", "활성"] };
+const USER_STATE = { active: ["allow", "사용"], disabled: ["block", "중지"], locked: ["alert", "잠김"], deleted: ["outline", "삭제됨"] };
+const USER_FILTERS = [["", "전체"], ["active", "사용"], ["disabled", "중지"], ["locked", "잠김"], ["deleted", "삭제됨"]];
 ROUTES.people = async (_, tab, query = new URLSearchParams()) => {
   const status = ["pending", "approved", "rejected"].includes(query.get("signup_status")) ? query.get("signup_status") : "";
   const signupPage = listPageNumber(query, "signup_page"), signupQuery = new URLSearchParams();
   if (status) signupQuery.set("status", status);
   if (signupPage > 1) signupQuery.set("page", signupPage);
-  const [{ accounts }, { accounts: deletedAccounts }, signupData, identity, { suspensions }] = await Promise.all([
-    api("/api/accounts"), api("/api/accounts/deleted").catch(() => ({ accounts: [] })), api(`/api/signup-requests${signupQuery.size ? `?${signupQuery}` : ""}`),
-    api("/api/identity").catch(() => ({ provider: "local", bindings: [] })), gw("suspensions")]);
+  const soft = (promise, fallback) => promise.catch(() => fallback);
+  const [{ accounts }, { accounts: deletedAccounts }, signupData, identity, { suspensions }, inv, analysis] = await Promise.all([
+    api("/api/accounts"), soft(api("/api/accounts/deleted"), { accounts: [] }), api(`/api/signup-requests${signupQuery.size ? `?${signupQuery}` : ""}`),
+    soft(api("/api/identity"), { provider: "local", bindings: [] }), gw("suspensions"),
+    soft(gw("endpoint/inventory"), { agents: [] }), soft(gw(`activity/analysis?${sinceDay()}`), null)]);
   const signups = signupData.requests;
   const signupHref = (p, nextStatus = status) => `#/people?${new URLSearchParams({ t: "signups", ...(nextStatus ? { signup_status: nextStatus } : {}), signup_page: p })}`;
   const signupPaging = listPager({ ...signupData, total: signupData.total ?? signups.length, page_size: signupData.page_size || 100 }, signupHref);
   peopleAccounts = accounts;
+  const cards = userCards(accounts, deletedAccounts, signups, suspensions);
+  const stateFilter = USER_FILTERS.some(([value]) => value === query.get("status")) ? query.get("status") : "";
+  const rows = userRows(accounts, deletedAccounts, inv.agents || [], peopleStats(analysis?.people)).filter((a) => !stateFilter || a.state === stateFilter);
+  const departments = departmentCounts(accounts), blockedTop = topBlocked(analysis?.people);
+  const filterHref = (value) => `#/people?${new URLSearchParams({ t: "accounts", ...(value ? { status: value } : {}) })}`;
   return {
     html: page({
-      head: head("사용자 관리", { actions: html`<button class="btn primary" type="button" data-act="account-invite">사용자 초대</button>` }),
-      active: ["accounts", "deleted", "suspensions", "signups", ...(identity.provider === "oidc" ? ["sso"] : [])].includes(tab) ? tab : "accounts",
+      head: head("사용자", { actions: html`<button class="btn primary" type="button" data-act="account-invite">사용자 초대</button>` }),
+      kpis: html`${kpiStrip([["전체 사용자", cards.total, "", "#/people?t=accounts"], ["활성", cards.active, "allow", "#/people?t=accounts&status=active"],
+        ["이용 중지 중", cards.stopped, cards.stopped ? "alert" : "", "#/people?t=suspensions"],
+        ["가입 대기", cards.pending, cards.pending ? "approval" : "", "#/people?t=signups&signup_status=pending"]])}
+        ${chartRow(["부서별 사용자", "c-people-departments", "부서별 사용자 수"], ["24시간 차단 상위 사용자", "c-people-blocked", "24시간 차단 상위 사용자"])}`,
+      active: ["accounts", "suspensions", "signups", ...(identity.provider === "oidc" ? ["sso"] : [])].includes(tab) ? tab : "accounts",
       tabs: [
-        { key: "accounts", label: "사용자", n: accounts.length, body: panel("사용자", html`<table class="data"><thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>부서</th><th>상태</th><th></th></tr></thead><tbody id="account-list">
-          ${accounts.map((a) => html`<tr><td><b>${a.display_name}</b><span class="sub">${a.job_title || ""}</span></td><td class="small">${a.email}</td>
-            <td>${ROLE[a.role] || a.role}</td><td>${a.department}</td>
-            <td>${chip({ active: "allow", disabled: "block", locked: "alert" }[a.status] || "", { active: "사용", disabled: "중지", locked: "잠김" }[a.status] || a.status)}</td>
-            <td class="num">${a.user_id === viewer.user_id ? html`<span class="small muted">본인</span>`
+        { key: "accounts", label: "사용자", n: rows.length, body: panel("사용자", html`<table class="data"><thead><tr><th>이름</th><th>부서</th><th>역할</th><th>상태</th><th>PC 연결</th><th class="num">호출 · 차단 24시간</th><th></th></tr></thead><tbody id="account-list">
+          ${rows.map((a) => html`<tr><td><b>${a.display_name}</b> <span class="muted small">${a.email || ""}</span></td><td>${a.department || "—"}</td><td>${ROLE[a.role] || a.role}</td>
+            <td>${chip(...(USER_STATE[a.state] || ["", a.state]))}</td>
+            <td>${a.stage === "none" ? NONE : html`<a href="#/endpoints?${new URLSearchParams({ t: "devices", q: a.display_name })}">${chip(...PC_STAGE[a.stage])}</a>`}</td>
+            <td class="num">${a.state === "deleted" ? "—" : html`${a.calls} · <span class="${a.blocked ? "bad-text" : ""}">${a.blocked}</span>`}</td>
+            <td class="num">${a.state === "deleted" ? html`<button class="btn sm primary" type="button" data-act="account-restore" data-id="${a.user_id}" data-name="${a.display_name}">복구</button>`
+              : a.user_id === viewer.user_id ? html`<span class="small muted">본인</span>`
               : rowMenu(html`<button type="button" data-act="account-status" data-id="${a.user_id}" data-name="${a.display_name}" data-status="${a.status}">상태 변경</button>
                 <button type="button" data-act="suspend-open" data-token="${a.token}" data-name="${a.display_name}">MCP 이용 중지</button>
                 <button type="button" data-act="suspend-all" data-token="${a.token}" data-name="${a.display_name}">전체 중지</button>
@@ -1765,21 +1783,15 @@ ROUTES.people = async (_, tab, query = new URLSearchParams()) => {
                 ${a.role !== "admin" || viewer.user_id === "root" ? html`<button type="button" data-act="account-rename" data-id="${a.user_id}" data-name="${a.display_name}">아이디 변경</button>
                   <button type="button" data-act="account-password" data-id="${a.user_id}" data-name="${a.display_name}" data-role="${a.role}">비밀번호 재설정</button>` : ""}
                 ${a.user_id !== "root" ? html`<button type="button" class="danger" data-act="account-delete" data-id="${a.user_id}" data-name="${a.display_name}">삭제</button>` : ""}`)}</td></tr>`)}
-          </tbody></table><p class="empty" role="status" data-list-empty="account-list" hidden>조건에 맞는 결과 없음</p>`, { flush: true, tools: listToolbar("account-list", "이름·이메일·부서 검색") }) },
-        { key: "deleted", label: "삭제된 사용자", n: deletedAccounts.length,
-          body: panel("삭제된 사용자", html`<table class="data"><thead><tr><th>이름</th><th>이메일</th><th>역할</th><th>부서</th><th>삭제 시각</th><th></th></tr></thead><tbody>
-            ${deletedAccounts.map((a) => html`<tr><td><b>${a.display_name}</b></td><td class="small">${a.email}</td>
-              <td>${ROLE[a.role] || a.role}</td><td>${a.department || "—"}</td>
-              <td class="small nowrap">${when(a.status_changed_at)}<span class="sub">${a.status_changed_by || "—"}</span></td>
-              <td class="num"><button class="btn sm primary" type="button" data-act="account-restore" data-id="${a.user_id}" data-name="${a.display_name}">복구</button></td></tr>`)}
-            </tbody></table>${deletedAccounts.length ? "" : empty("삭제된 사용자 없음")}`, { flush: true }) },
+          </tbody></table>${rows.length ? "" : empty("사용자 없음", { filtered: !!stateFilter })}<p class="empty" role="status" data-list-empty="account-list" hidden>조건에 맞는 결과 없음</p>`,
+          { flush: true, tools: html`${listToolbar("account-list", "이름·이메일·부서 검색")}<div class="row-actions">${USER_FILTERS.map(([value, label]) => html`<a class="btn sm ${value === stateFilter ? "primary" : ""}" href="${filterHref(value)}">${label}</a>`)}</div>` }) },
         { key: "suspensions", label: "이용 중지", n: suspensions.filter((x) => !x.resumed_at).length,
           body: panel("이용 중지", html`<table class="data"><thead><tr><th>사용자</th><th>서버</th><th>사유</th><th>중지</th><th>해제 예정</th><th>상태</th><th>재개</th><th></th></tr></thead><tbody>
-            ${suspensions.map((x) => html`<tr><td>${x.display_name || "—"}</td><td>${x.server_name || x.server_id}</td><td class="small">${x.reason}</td>
-              <td class="small nowrap">${when(x.suspended_at)}<span class="sub">${x.suspended_by || "—"}</span></td>
+            ${suspensions.map((x) => html`<tr><td>${x.display_name || "—"}</td><td>${x.server_name || x.server_id}</td><td class="small">${short(x.reason, 60)}</td>
+              <td class="small nowrap">${when(x.suspended_at)} · ${x.suspended_by || "—"}</td>
               <td class="small">${x.expires_at ? when(x.expires_at) : "—"}</td>
               <td>${x.resumed_at ? chip("allow", "재개") : chip("block", "중지")}</td>
-              <td class="small">${x.resumed_at ? html`${when(x.resumed_at)}<span class="sub">${x.resumed_by || "—"} · ${x.resume_note || "—"}</span>` : "—"}</td>
+              <td class="small">${x.resumed_at ? html`${when(x.resumed_at)} · ${x.resumed_by || "—"}` : "—"}</td>
               <td class="num">${x.resumed_at ? "" : html`<button class="btn sm primary" data-act="suspend-resume" data-id="${x.id}" data-name="${x.display_name || ""}" data-server="${x.server_name || x.server_id}">재개</button>`}</td></tr>`)}
             </tbody></table>${suspensions.length ? "" : empty("중지한 이용 없음")}`, { flush: true }) },
         { key: "signups", label: "가입 요청", n: signupPendingTotal(signupData),
@@ -1793,9 +1805,14 @@ ROUTES.people = async (_, tab, query = new URLSearchParams()) => {
         ...(identity.provider === "oidc" ? [{ key: "sso", label: "SSO", n: identity.bindings.length, body: html`<div class="stack">
           ${panel("SSO", kv([["로그인 방식", identity.label || "SSO"], ["상태", identity.configured ? "사용" : "설정 필요"], ["발급자", identity.issuer || "—"]]),
             { end: identity.configured ? html`<button class="btn sm primary" data-act="identity-bind">SSO 계정 연결</button>` : "" })}
-          ${panel("연결된 SSO 계정", identity.bindings.length ? html`<table class="data"><thead><tr><th>사용자</th><th>SSO 계정</th><th>연결</th><th></th></tr></thead><tbody>${identity.bindings.map((b) => html`<tr><td>${b.principal}</td><td class="mono">${b.subject}</td><td>${b.linked_by}<span class="sub">${when(b.linked_at)}</span></td><td class="num"><button class="btn sm danger" data-act="identity-unbind" data-id="${b.id}">연결 해제</button></td></tr>`)}</tbody></table>` : empty("연결된 계정 없음"), { flush: true })}</div>` }] : []),
+          ${panel("연결된 SSO 계정", identity.bindings.length ? html`<table class="data"><thead><tr><th>사용자</th><th>SSO 계정</th><th>연결</th><th></th></tr></thead><tbody>${identity.bindings.map((b) => html`<tr><td>${b.principal}</td><td class="mono">${b.subject}</td><td>${b.linked_by} · ${when(b.linked_at)}</td><td class="num"><button class="btn sm danger" data-act="identity-unbind" data-id="${b.id}">연결 해제</button></td></tr>`)}</tbody></table>` : empty("연결된 계정 없음"), { flush: true })}</div>` }] : []),
       ],
     }),
+    charts: {
+      "c-people-departments": () => charts.bars(departments.map((d) => ({ name: d.name || "미지정", value: d.value }))),
+      "c-people-blocked": () => charts.bars(blockedTop.map((p) => ({ name: p.name, value: p.value, color: charts.color("Block") })),
+        { onClick: (e) => { const row = blockedTop[e.dataIndex]; if (row) location.hash = `#/activity?${new URLSearchParams({ ...Object.fromEntries(sinceDay()), decision: "Block", person: row.name })}`; } }),
+    },
   };
 };
 
