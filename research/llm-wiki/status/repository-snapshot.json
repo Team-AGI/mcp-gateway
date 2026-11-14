@@ -1,11 +1,20 @@
 {
-  "captured_at": "2026-11-14T14:33:14+09:00",
-  "head": "38e146150784ae70531f8bfebfc86b34c0174356",
-  "branch": "fix/approval-window",
+  "captured_at": "2026-11-14T14:42:17+09:00",
+  "head": "7fd9031daa9859e30ad31ec6acd31d028220aef8",
+  "branch": "fix/policy-coverage-honesty",
   "status": [
-    "M research/llm-wiki/analysis/integration-cases.json",
-    " M research/llm-wiki/analysis/requirements.json",
-    " M research/llm-wiki/catalogs/threats.json"
+    "M full_stack_lab/gateway/app/addon.py",
+    " M full_stack_lab/gateway/app/agent_static/console.js",
+    " M full_stack_lab/gateway/app/agent_static/i18n-en.mjs",
+    " M full_stack_lab/gateway/app/organization_policies.json",
+    " M full_stack_lab/gateway/app/organization_policy.py",
+    " M full_stack_lab/tests/console-ia.test.mjs",
+    " M full_stack_lab/tests/organization_policy_catalog_check.py",
+    " M policy/TRACE.md",
+    " M policy/tools/build_console_catalog.py",
+    " M policy/tools/trace.py",
+    " M research/llm-wiki/analysis/integration-cases.json",
+    " M research/llm-wiki/analysis/requirements.json"
   ],
   "scope": "local-code-only",
   "deployment_verified": false,

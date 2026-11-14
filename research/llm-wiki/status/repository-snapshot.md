@@ -1,17 +1,26 @@
 # 저장소 코드 스냅샷
 
-확인 시각: 2026-11-14T14:33:14+09:00
+확인 시각: 2026-11-14T14:42:17+09:00
 
-HEAD: `38e146150784ae70531f8bfebfc86b34c0174356` · 로컬 브랜치: `fix/approval-window`
+HEAD: `7fd9031daa9859e30ad31ec6acd31d028220aef8` · 로컬 브랜치: `fix/policy-coverage-honesty`
 
 로컬 코드 상태입니다. 배포·활성화·실기기 검증과 실험 성공을 증명하지 않습니다.
 
 ## 워킹 트리
 
 ```text
-M research/llm-wiki/analysis/integration-cases.json
+M full_stack_lab/gateway/app/addon.py
+ M full_stack_lab/gateway/app/agent_static/console.js
+ M full_stack_lab/gateway/app/agent_static/i18n-en.mjs
+ M full_stack_lab/gateway/app/organization_policies.json
+ M full_stack_lab/gateway/app/organization_policy.py
+ M full_stack_lab/tests/console-ia.test.mjs
+ M full_stack_lab/tests/organization_policy_catalog_check.py
+ M policy/TRACE.md
+ M policy/tools/build_console_catalog.py
+ M policy/tools/trace.py
+ M research/llm-wiki/analysis/integration-cases.json
  M research/llm-wiki/analysis/requirements.json
- M research/llm-wiki/catalogs/threats.json
 ```
 
 ## 주요 파일 바이트

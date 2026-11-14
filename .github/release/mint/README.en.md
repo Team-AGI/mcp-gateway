@@ -8,7 +8,7 @@
 
 [한국어](README.md) · **English**
 
-![Version](https://img.shields.io/badge/version-1.0.4-1f4287)
+![Version](https://img.shields.io/badge/version-1.0.5-1f4287)
 ![MCP](https://img.shields.io/badge/MCP-2025--11--25-1f4287)
 ![Docker](https://img.shields.io/badge/deploy-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 
@@ -55,7 +55,7 @@ The trace collector (Jaeger) in the diagram is an optional component that is not
 ## Quick install
 
 ```bash
-git clone --branch v1.0.4 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.5 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <internal IPv4>
 ```
