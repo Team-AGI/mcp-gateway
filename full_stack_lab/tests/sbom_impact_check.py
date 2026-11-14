@@ -72,7 +72,7 @@ class SbomImpactCheck(unittest.TestCase):
         self.assertNotIn("sbom-impact", [item.value for item in admin.elts])
         console = (ROOT / "gateway" / "app" / "agent_static" / "console.js").read_text(encoding="utf-8")
         server_page = console[console.index("ROUTES.servers ="):console.index("ROUTES.people =")]
-        self.assertIn('<summary>공급망 영향 조회</summary>${await supplyChainImpact(', server_page)
+        self.assertIn('{ key: "supply", label: "공급망", body: await supplyChainImpact(', server_page)
         routes = {decorator.args[0].value: node for node in service.body
                   if isinstance(node, ast.AsyncFunctionDef) for decorator in node.decorator_list
                   if isinstance(decorator, ast.Call) and decorator.args and isinstance(decorator.args[0], ast.Constant)

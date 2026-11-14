@@ -398,12 +398,14 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
   assert.equal(ui.ROUTES.coverage, undefined);
   const people = await ui.ROUTES.endpoints("", "devices");
   const devices = people.html.tabs.find((item) => item.key === "devices");
-  assert.deepEqual(Array.from(people.html.tabs, (item) => item.key), ["devices", "shadow", "managed"]);
-  assert.match(String(people.html.tabs[1].body), /엔드포인트 MCP 설정[^]*엔드포인트 수신기[^]*관측 수집 상태[^]*엔드포인트 차단/);
-  assert.match(String(devices.body), /새 PC 활성화[^]*통제 점검[^]*엔드포인트 MCP 설정/);
-  const serversWithImpact = await ui.ROUTES.servers("", "servers", new URLSearchParams("impact=1&package=alpha&range=%3E%3D1.0.0"));
-  assert.equal(serversWithImpact.html.tabs.length, 5);
-  assert.match(String(serversWithImpact.html.tabs[0].body), /server-impact[^]*open[^]*공급망 영향 조회[^]*value="alpha"[^]*sbom-impact-stop/);
+  assert.deepEqual(Array.from(people.html.tabs, (item) => item.key), ["devices", "managed"]);
+  assert.match(String(devices.body), /새 PC 활성화/);
+  const links = await ui.ROUTES.connections("", "shadow", new URLSearchParams());
+  assert.deepEqual(Array.from(links.html.tabs, (item) => item.key), ["items", "shadow", "vendor"]);
+  ui.responses["/api/supply-chain/impact"] = { counts: { affected: 1, unaffected: 0, unknown: 0, no_data: 0 }, servers: [{ server_id: "docs", server_name: "Docs", judgement: "영향 있음", evidence: [{ version: "1.2.0" }] }] };
+  const serversWithImpact = await ui.ROUTES.servers("", "supply", new URLSearchParams("package=alpha&range=%3E%3D1.0.0"));
+  assert.match(String(serversWithImpact.html.tabs[2].body), /영향 서버[^]*sbom-impact-stop[^]*Docs[^]*영향 있음[^]*1\.2\.0[^]*server-suspend/);
+  assert.equal(serversWithImpact.html.tabs.length, 3);
   const intake = await ui.ROUTES.intake("", "", new URLSearchParams());
   assert.deepEqual(Array.from(intake.html.tabs, (t) => t.key), ["list", "requests", "new", "approved"]);
 });
@@ -486,7 +488,7 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.doesNotMatch(String(overview.html.tabs[0].body), /조직 통제 의존 경로|c-connections-matrix/);
   assert.equal(overview.charts["c-ov-matrix"], undefined);
   assert.match(String(overview.html.kpis), /href="#\/servers\?t=items&state=bypass_possible"/);
-  const result = await ui.ROUTES.servers("", "items", new URLSearchParams());
+  const result = await ui.ROUTES.connections("", "items", new URLSearchParams());
   const body = String(result.html.tabs.find((t) => t.key === "items").body);
   assert.match(body, /연결 유형별 통제 현황[^]*연결 항목 수[^]*연결별 통제 상태/);
   assert.match(body, /id="c-connections-matrix"/);
@@ -873,10 +875,9 @@ test("접근 권한은 AI 연결 관리에서만 조회하고 정책은 기존 �
     capabilities: [{ id: "permission-1", principals: ["alice"], servers: ["docs"], actions: ["r", "w"], server_actions:{docs:["r"]}, path_roots: ["/docs"], tables:["public.products"], tools:["read"], valid_until: null }],
     runtime_envelopes: [{ server_id: "docs", principals: ["*"], tools: { read_file: "r" }, valid_until: null }],
   } });
-  const connections = await ui.ROUTES.servers("", "capabilities", new URLSearchParams());
-  const access = connections.html.tabs.find((tab) => tab.key === "capabilities");
-  assert.equal(access.label, "접근 권한");
-  assert.equal(access.n, 2);
+  const connections = await ui.ROUTES.servers("", "tools", new URLSearchParams());
+  const access = connections.html.tabs.find((tab) => tab.key === "tools");
+  assert.equal(access.label, "도구·권한");
   assert.match(String(access.body), /permission-1[^]*alice[^]*docs[^]*\/docs[^]*read_file/);
   assert.match(String(access.body), /출처[^]*허용 행위[^]*허용 자원[^]*허용 도구/);
   assert.match(String(access.body), /개별 접근 권한[^]*docs: 읽기[^]*public.products[^]*도입 승인/);
@@ -893,7 +894,7 @@ test("커넥터 전체 설정과 개별 항목을 분리하고 전체 차단 표
   const ui = build(true, {"/api/connectors": {summary:{pending:0,expired:0},
     builtins:[{key:"all",label:"전체 커넥터",kind:"connector",harness:"claude",state:"denied"}],
     items:[{key:"claude:connector:docs",names:["Docs"],kinds:["connector"],harness:"claude",builtin:true,state:"approved",active_pcs:2,people:1}]}});
-  const out = await ui.ROUTES.servers("", "vendor", new URLSearchParams());
+  const out = await ui.ROUTES.connections("", "vendor", new URLSearchParams());
   const body = String(out.html.tabs.find((t) => t.key === "vendor").body);
   assert.match(body, /커넥터 전체 사용 설정[^]*개별 커넥터[^]*Docs/);
   assert.match(body, /승인 상태[^]*통제 적용 상태/);
@@ -909,15 +910,15 @@ test("연결 통제 상세에서 해당 추가 연결의 승인 관리로 이동
       {key:"unknown",name:"Unknown",class:"shadow_or_unknown",state:"unknown_not_enrolled"}],devices:[],summary:{devices:{bypass_possible:0}}},
     "/api/connectors": {items:[{key,names:["Docs"],kinds:["plugin"],harness:"claude",builtin:false,state:"pending",holders:[]}],summary:{pending:1,expired:0}}
   });
-  const out = await ui.ROUTES.servers("", "items", new URLSearchParams());
+  const out = await ui.ROUTES.connections("", "items", new URLSearchParams());
   assert.match(String(out.html.tabs.find((t) => t.key === "items").body), /연결별 통제 상태/);
   assert.match(String(out.html.tabs.find((t) => t.key === "vendor").body), /추가 연결 승인 관리/);
   let controls;
   ui.policyDrawer((title, content) => { controls = String(content); });
   await ui.ACTIONS.integration({dataset:{key}});
   const query = new URLSearchParams({t:"vendor",connector:key});
-  assert.ok(controls.includes(("#/servers?" + query).replaceAll("&", "&amp;")));
-  const target = await ui.ROUTES.servers("", "vendor", query);
+  assert.ok(controls.includes(("#/connections?" + query).replaceAll("&", "&amp;")));
+  const target = await ui.ROUTES.connections("", "vendor", query);
   target.after();
   assert.match(controls, /connector-decide[^]*data-key="claude:host:docs.example"/);
   await ui.ACTIONS.integration({dataset:{key:"unknown"}});
@@ -1198,11 +1199,18 @@ test("미등록 MCP는 혼합 합계 없이 설정·수신기·차단 건수를 
   const shadow = out.html.tabs.find((item) => item.key === "shadow");
   assert.equal(shadow.n, 2);
   const markup = String(shadow.body);
-  for (const [label, value] of [["설정 기록", 7], ["수신기 관측", 3], ["엔드포인트 차단", 0]]) assert.ok(markup.includes(`<dt>${label}</dt><dd>${value}</dd>`));
-  assert.match(markup, /표시 서버 0개/);
-  const items = (await ui.ROUTES.servers("", "items", new URLSearchParams())).html.tabs.find((item) => item.key === "items");
+  assert.match(markup, /<th>MCP<\/th><th>연결<\/th><th class="num">PC<\/th><th>최근 발견<\/th><th>분류<\/th>/);
+  assert.match(markup, /Docs[^]*<td class="num">2<\/td>/); assert.match(markup, /data-act="shadow-group" data-index="0"/);
+  assert.match(String(out.html.kpis), /미적용 PC<\/div><div class="value">2</);
+  let drawer;
+  ui.policyDrawer((title, controls, tabs) => { drawer = { title, controls: String(controls), tabs }; });
+  await ui.ACTIONS["shadow-group"]({ dataset: { index: "0" } });
+  assert.equal(drawer.title, "Docs"); assert.match(drawer.controls, /도입 신청 만들기/); assert.match(drawer.controls, /#\/intake\?t=new&amp;name=Docs/);
+  assert.deepEqual(Array.from(drawer.tabs, (tab) => tab.key), ["pcs", "files", "listeners", "denials"]);
+  assert.match(String(drawer.tabs[0].body), /data-act="device-quarantine" data-id="ep1"[^]*data-id="ep2"/);
+  const items = (await ui.ROUTES.connections("", "items", new URLSearchParams())).html.tabs.find((item) => item.key === "items");
   assert.match(String(items.body), /항목 없음/);
-  const filtered = (await ui.ROUTES.servers("", "items", new URLSearchParams("q=missing"))).html.tabs.find((item) => item.key === "items");
+  const filtered = (await ui.ROUTES.connections("", "items", new URLSearchParams("q=missing"))).html.tabs.find((item) => item.key === "items");
   assert.match(String(filtered.body), /조건에 맞는 결과 없음/);
 });
 
@@ -1306,4 +1314,65 @@ test("기존 신청 검색은 실패와 복구를 구분하고 늦은 실패가 
   ui.context.searchInput({ target: input }); await tick();
   assert.match(ui.node("#catalog-results").innerHTML, /조건에 맞는 결과 없음/);
   assert.doesNotMatch(ui.node("#catalog-results").innerHTML, /조회 실패/);
+});
+
+const intakeFixture = () => {
+  const request = { id: "req1", display_name: "문서 검색", status: "VALIDATED", intake_kind: "remote-endpoint", endpoint_url: "https://example.test/mcp", purpose: "조회",
+    evidence: {}, risk: { status: "ok", tier: "high", approvals: 1, required: 2 }, internal_repo_url: "/git/mcp/docs" };
+  return {
+    "/api/mcp-requests/req1/report": { request, reports: [], artifacts: [], events: [], risk: null, risk_acceptances: [], exit_terms_discovery: null },
+    "/api/mcp-requests/req1/approval-preview": { request, gate: { scanners: [], critical: null }, proposal_sha256: "abc",
+      proposal: { endpoint: "https://example.test/mcp", server_id: "docs-1234", data_class: "public", risk: { tier: "high" }, tools: { lookup: "r" },
+        catalog: { tools: [{ name: "lookup", description: "조회", warnings: [] }] }, supplier_assurance: { legal_entity: "예시 주식회사" },
+        parameter_constraints: { lookup: {} }, tool_reviews: { lookup: {} }, risk_input: {}, address_tools: [], blockers: [] } },
+    "/api/mcp-requests/req1/approve-and-register": { message: "승인했습니다." },
+  };
+};
+
+test("도입 심사 상세는 검사·범위·공급자·출처를 한 화면에 두고 하단 바에서 승인한다", async () => {
+  const ui = build(true, intakeFixture());
+  ui.context.URL = URL;
+  const out = await ui.ROUTES.intake("req1", "");
+  const page = out.html;
+  assert.deepEqual(Array.from(page.tabs, (t) => t.key), ["summary", "scope", "risk", "supplier", "source", "records"]);
+  assert.match(String(page.tabs[0].body), /제안값[^]*docs-1234/);
+  assert.match(String(page.kpis), /위험 등급[^]*높음[^]*승인[^]*1\/2/);
+  assert.match(String(page.head), /문서 검색/); assert.match(String(page.head), /href="#\/intake\?t=review"/);
+  const tab = (key) => String(page.tabs.find((t) => t.key === key).body);
+  assert.match(tab("scope"), /id="intake-approve"[^]*name="approved_tool" value="lookup"/);
+  assert.match(tab("supplier"), /예시 주식회사/); assert.doesNotMatch(tab("supplier"), /확인 안 됨/);
+  assert.match(tab("source"), /\/git\/mcp\/docs[^]*사내 저장소/);
+  const dock = String(out.dock);
+  assert.match(dock, /name="valid_days"/); assert.match(dock, /data-act="intake-reject" data-id="req1"/); assert.match(dock, /data-act="intake-confirm" data-id="req1"/);
+  assert.doesNotMatch(dock + tab("scope"), /location_|위치/);
+  ui.approvalActions(async () => null);
+  const values = { valid_days: "90", audience: "all" };
+  ui.context.FormData = class { get(key) { return values[key] ?? null; } getAll(key) { return key === "approved_tool" ? ["lookup"] : []; } };
+  await ui.ACTIONS["intake-confirm"]({ dataset: { id: "req1" } });
+  const sent = JSON.parse(ui.requests.find((r) => r.url.endsWith("/approve-and-register")).body);
+  assert.deepEqual([sent.tools, sent.valid_days, sent.audience, sent.proposal_sha256], [["lookup"], 90, "all", "abc"]);
+  assert.deepEqual(sent.supplier_assurance, { legal_entity: "예시 주식회사" }); assert.ok(!("residency" in sent));
+  assert.equal(ui.context.location.hash, "#/servers/docs-1234");
+});
+
+test("본인 신청과 이미 등록된 신청은 승인 바 없이 읽기만 한다", async () => {
+  const fixture = intakeFixture();
+  fixture["/api/mcp-requests/req1/report"].request.own = true;
+  const ui = build(true, fixture);
+  const out = await ui.ROUTES.intake("req1", "scope");
+  assert.equal(out.dock, ""); assert.equal(out.html.active, "scope");
+  assert.ok(!ui.calls.includes("/api/mcp-requests/req1/approval-preview"));
+});
+
+test("서버 서랍의 긴급 중지·재개와 미등록 PC 격리는 사유를 받아 서버 API를 호출한다", async () => {
+  const ui = build(true, { "/gw/ops/servers/docs/suspend": {}, "/gw/ops/servers/docs/resume": {}, "/gw/endpoint/devices/ep1/quarantine": {} });
+  ui.approvalActions(async () => ({ get: () => "점검을 위해 중지" }));
+  await ui.ACTIONS["server-suspend"]({ dataset: { id: "docs", name: "Docs" } });
+  await ui.ACTIONS["server-resume"]({ dataset: { id: "docs", name: "Docs" } });
+  await ui.ACTIONS["device-quarantine"]({ dataset: { id: "ep1", name: "pc" } });
+  const sent = (suffix) => ui.requests.find((r) => r.url.endsWith(suffix));
+  assert.deepEqual(JSON.parse(sent("/gw/ops/servers/docs/suspend").body), { reason: "점검을 위해 중지" });
+  assert.deepEqual(JSON.parse(sent("/gw/ops/servers/docs/resume").body), { note: "점검을 위해 중지" });
+  assert.deepEqual(JSON.parse(sent("/gw/endpoint/devices/ep1/quarantine").body), { note: "점검을 위해 중지" });
+  assert.equal(ui.ACTIONS["server-deregister"], undefined);
 });
