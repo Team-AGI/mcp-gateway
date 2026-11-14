@@ -1244,6 +1244,39 @@ residency_input(grade, targets, pack) := document if {
     document := object.union(base, {"pac": {"request": pac_fixture.request, "facts": facts}})
 }
 
+# 위치 심사를 폐기했다. 두 규칙은 관리대장에서 중지돼 어떤 위치 입력으로도 판정하지 않는다.
+test_residency_rules_are_suspended_in_the_ledger if {
+    every id in ["P-RESIDENCY-001", "P-RESIDENCY-002"] {
+        data.policy_ledger[id].status == "중지"
+    }
+}
+
+test_residency_never_judges_whatever_the_location_input if {
+    every case in [["public", [residency_target([], [])]], ["nonimportant", [residency_target(["US"], ["US"])]], ["important", [residency_target(["US"], ["US"])]],
+                   ["important", [residency_target([], [])]], ["nonimportant", [residency_target(["KR"], ["KR", "US"])]],
+                   ["nonimportant", [residency_target(["KR"], ["KR"]), residency_target(["US"], ["US"])]]] {
+        result := decision with input as residency_input(case[0], case[1], data.residency)
+        result.decision == "Allow"
+        result.policy_id == "P-AUTHZ-ALLOW-001"
+    }
+}
+
+test_residency_flag_or_stale_pack_does_not_revive_the_rules if {
+    original := residency_input("important", [residency_target(["US"], ["US"])], {"rules": {}})
+    location := object.union(original.pac.facts.residency, {"enabled": true})
+    facts := object.union(original.pac.facts, {"residency": location})
+    document := object.union(original, {"pac": object.union(original.pac, {"facts": facts})})
+    result := decision with input as document
+    result.decision == "Allow"
+    result.policy_id == "P-AUTHZ-ALLOW-001"
+}
+
+test_provider_hosted_tool_without_location_facts_is_not_stopped_by_residency if {
+    document := object.union(base, {"resource": {"data_class": "nonimportant"}, "tool": {"action": "r", "provider_hosted": true}})
+    result := decision with input as document
+    not startswith(result.policy_id, "P-RESIDENCY-")
+}
+
 test_residency_domestic_all_grades if {
     every grade in ["public", "nonimportant", "important"] {
         result := decision with input as residency_input(grade, [residency_target(["KR"], ["KR"])], data.residency)
@@ -1256,48 +1289,6 @@ test_residency_public_without_location if {
     result := decision with input as residency_input("public", [residency_target([], [])], data.residency)
     result.decision == "Allow"
     result.policy_id == "P-AUTHZ-ALLOW-001"
-}
-
-test_residency_foreign_approval if {
-    result := decision with input as residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency)
-    result.decision == "Approval"
-    result.policy_id == "P-RESIDENCY-002"
-}
-
-test_residency_missing_or_partial_location_block if {
-    every target in [residency_target([], []), residency_target(["KR"], []),
-                    object.union(residency_target(["KR"], ["KR"]), {"processor": ""}),
-                    object.union(residency_target(["KR"], ["KR"]), {"evidence_ref": ""})] {
-        result := decision with input as residency_input("nonimportant", [target], data.residency)
-        result.decision == "Block"
-        result.policy_id == "P-RESIDENCY-001"
-    }
-}
-
-test_residency_foreign_storage_cannot_hide_behind_domestic_processing if {
-    result := decision with input as residency_input("important", [residency_target(["KR"], ["KR", "US"])], data.residency)
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
-}
-
-test_residency_all_targets_must_pass if {
-    result := decision with input as residency_input("important", [residency_target(["KR"], ["KR"]), residency_target(["US"], ["US"])], data.residency)
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
-}
-
-test_residency_stale_pack_is_blocked if {
-    document := residency_input("nonimportant", [residency_target(["KR"], ["KR"])], {"rules": {}})
-    result := decision with input as document
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
-}
-
-test_residency_granted_flag_is_not_an_approval if {
-    document := residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency)
-    result := decision with input as object.union(document, {"approval": {"granted": true}})
-    result.decision == "Approval"
-    result.policy_id == "P-RESIDENCY-002"
 }
 
 residency_with_approval(document) := approved if {
@@ -1318,69 +1309,12 @@ test_residency_bound_independent_approval_allows if {
     result.policy_id == "P-AUTHZ-ALLOW-001"
 }
 
-test_residency_location_change_invalidates_old_approval if {
-    old := residency_with_approval(residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency))
-    changed := residency_input("nonimportant", [residency_target(["JP"], ["JP"])], data.residency)
-    next := object.union(changed, {"pac": object.union(changed.pac, {"facts": object.union(changed.pac.facts,
-        {"individual_approval": old.pac.facts.individual_approval})})})
-    result := decision with input as next
-    result.decision == "Approval"
-    result.policy_id == "P-RESIDENCY-002"
-}
-
-test_residency_forbidden_cannot_be_approved if {
-    approved := residency_with_approval(residency_input("important", [residency_target(["US"], ["US"])], data.residency))
-    result := decision with input as approved
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
-}
-
-test_residency_missing_basis_still_needs_approval_with_allow_country if {
-    pack := object.union(data.residency, {"rules": object.union(data.residency.rules,
-        {"nonimportant": {"*": "allow"}})})
-    document := residency_input("nonimportant", [residency_target(["US"], ["US"])], pack)
-    result := decision with input as document with data.residency as pack
-    result.decision == "Approval"
-    result.policy_id == "P-RESIDENCY-002"
-}
-
 test_residency_approval_cannot_outrank_contract_block if {
     document := residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency)
     broken := object.union(document, {"contract": object.union(document.contract, {"schema_hash_match": false})})
     result := decision with input as broken
     result.decision == "Block"
     result.policy_id == "MCP-CATALOG-001"
-}
-
-test_residency_provider_missing_facts_is_not_exempt if {
-    document := object.union(base, {"resource": {"data_class": "nonimportant"},
-        "tool": {"action": "r", "provider_hosted": true}})
-    result := decision with input as document
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
-}
-
-test_residency_expired_revoked_or_self_approval_is_not_spendable if {
-    approved := residency_with_approval(residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency))
-    every change in [{"valid_until_ns": 1700000000000000000}, {"status": "REVOKED"},
-                     {"approver_id": pac_fixture.facts.identity.user_id}, {"single_use_reserved": false}] {
-        facts := object.union(approved.pac.facts, {"individual_approval": object.union(approved.pac.facts.individual_approval, change)})
-        document := object.union(approved, {"pac": object.union(approved.pac, {"facts": facts})})
-        result := decision with input as document
-        result.decision == "Approval"
-        result.policy_id == "P-RESIDENCY-002"
-    }
-}
-
-test_residency_pack_change_invalidates_old_approval if {
-    old := residency_with_approval(residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency))
-    pack := object.union(data.residency, {"version": "changed"})
-    changed := residency_input("nonimportant", [residency_target(["US"], ["US"])], pack)
-    facts := object.union(changed.pac.facts, {"individual_approval": old.pac.facts.individual_approval})
-    document := object.union(changed, {"pac": object.union(changed.pac, {"facts": facts})})
-    result := decision with input as document with data.residency as pack
-    result.decision == "Approval"
-    result.policy_id == "P-RESIDENCY-002"
 }
 
 test_intake_disabled_jurisdiction_pack_allows_missing_location if {
@@ -1391,16 +1325,6 @@ test_intake_disabled_jurisdiction_pack_allows_missing_location if {
     result := decision with input as document
     result.decision == "Allow"
     result.policy_id != "P-RESIDENCY-001"
-}
-
-test_intake_enabled_jurisdiction_pack_still_blocks_missing_location if {
-    original := residency_input("nonimportant", [residency_target([], [])], data.residency)
-    location := object.union(original.pac.facts.residency, {"enabled": true})
-    facts := object.union(original.pac.facts, {"residency": location})
-    document := object.union(original, {"pac": object.union(original.pac, {"facts": facts})})
-    result := decision with input as document
-    result.decision == "Block"
-    result.policy_id == "P-RESIDENCY-001"
 }
 
 test_intake_disabled_location_pack_does_not_bypass_contract_gate if {

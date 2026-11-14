@@ -126,11 +126,10 @@ class SuggestionCheck(unittest.TestCase):
         until = NOW + timedelta(days=90)
         self.assertEqual(supplier_assurance.renewal_until(until, 1, None), until + timedelta(days=1))
 
-    def test_pack_default_disabled_and_opt_in_missing_location_refused(self):
+    def test_pack_default_disabled_and_a_missing_location_is_never_required(self):
         self.assertFalse(residency.enabled({}))
         residency.require_location({}, "important", {})
-        with self.assertRaises(ValueError):
-            residency.require_location({}, "important", {"jurisdiction_pack_enabled": True})
+        residency.require_location({}, "important", {"jurisdiction_pack_enabled": True})
         self.assertTrue(residency.enabled({"jurisdiction_pack_enabled": "invalid"}))
 
     def test_supplier_files_are_bounded_untrusted_data(self):
