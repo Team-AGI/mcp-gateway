@@ -16,6 +16,7 @@ the SDK answers "method not found" (MCP-METHOD-001).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -36,6 +37,27 @@ from .core import execute_call, response_disposition
 SEPARATOR = "__"
 logger = logging.getLogger(__name__)
 STDIO_PRINCIPAL = os.getenv("GATEWAY_STDIO_PRINCIPAL", "")
+# A call that needs an administrator stays open this long; approved in time, it runs and answers in place.
+# The managed Codex config gives gateway tools 300 s, Claude Code waits longer; 0 turns the hold off.
+APPROVAL_HOLD_SECONDS = float(os.getenv("APPROVAL_HOLD_SECONDS", "120"))
+
+
+async def _await_approval(approval_id: str, seconds: float) -> str | None:
+    """APPROVED, REJECTED or EXPIRED once decided within `seconds`; None if still waiting. No lock is held."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + seconds
+    while loop.time() < deadline:
+        await asyncio.sleep(min(2.0, max(0.0, deadline - loop.time())))
+        row = await db.fetch_one("SELECT status, expires_at <= now() AS lapsed FROM approvals WHERE id=%s", (approval_id,))
+        if not row:
+            return None
+        if row["status"] != "PENDING":
+            return row["status"]
+        if row["lapsed"]:
+            return "EXPIRED"
+    return None
+
+
 DECISION_LABEL = {"Allow": "허용", "Alert": "허용·경보", "Restrict": "제한 실행", "Approval": "승인 대기", "Block": "차단"}
 
 
@@ -264,11 +286,22 @@ def build_mcp() -> Server:
                 local_jobs.validate_params({"name": name, "arguments": params.arguments or {}})
             token = upstream_sessions.downstream.set(_conversation(ctx, user))
             try:
-                outcome = await execute_call({
+                payload = {
                     "server_id": server_id, "tool": tool, "arguments": dict(params.arguments or {}),
                     "_response_protocol": getattr(ctx, "protocol_version", None),
                     "user_token": user["principal"], "client": _client_context(ctx, user), "transport_claims": user.get("claims") or {},
-                })
+                }
+                outcome = await execute_call(payload)
+                if outcome.get("decision") == "Approval" and outcome.get("approval_id") and APPROVAL_HOLD_SECONDS > 0:
+                    # Wait for the administrator instead of ending the agent's turn. Approved: the same request
+                    # goes through every check again and runs here, so the answer reaches the one who asked.
+                    decided = await _await_approval(outcome["approval_id"], APPROVAL_HOLD_SECONDS)
+                    if decided == "APPROVED":
+                        outcome = await execute_call(payload)
+                    elif decided in ("REJECTED", "EXPIRED"):
+                        outcome = {**outcome, "decision": "Block", "policy_id": outcome.get("policy_id"),
+                                   "reason": "관리자가 거부했습니다. 실행하지 않았습니다. 같은 요청을 반복하지 말고 사용자에게 알려 주세요."
+                                   if decided == "REJECTED" else "승인 요청이 처리되지 않고 만료됐습니다. 실행하지 않았습니다."}
             finally:
                 upstream_sessions.downstream.reset(token)
         except Exception:
