@@ -308,6 +308,7 @@ ICON.endpoints = ICON.people;
 ICON.security = ICON.coverage;
 ICON.inbox = ICON.approvals;
 ICON.connections = ICON.coverage;
+ICON.my = ICON.consent;
 const icon = (name) => raw(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ""}</svg>`);
 
 let toastTimer;
@@ -417,37 +418,48 @@ const panel = (title, body, { sub = "", status = "", tools = "", flush = false, 
 const chartBox = (id, label, size = "") => html`<div class="chart ${size}" id="${id}" role="img" aria-label="${label}"></div>`;
 
 const PAGES = [
-  { id: "overview", label: "대시보드", group: "운영", badge: "approvals" },
-  { id: "activity", label: "호출 기록", group: "운영" },
-  { id: "security", label: "보안 관제", group: "운영" },
-  { id: "servers", label: "AI 연결 관리", group: "보안 관리", badge: "coverage" },
-  { id: "people", label: "사용자 관리", group: "보안 관리" },
-  { id: "endpoints", label: "엔드포인트 관리", group: "보안 관리" },
-  { id: "policy", label: "보안 관리 정책", group: "보안 관리" },
-  { id: "intake", label: "도입 관리", group: "도입 및 종료" },
-  { id: "termination", label: "종료 및 폐기", group: "도입 및 종료", badge: "termination" },
-  { id: "consent", label: "도구 이용 동의", group: "이용 설정", badge: "consent" },
+  { id: "overview", label: "대시보드", group: "운영" },
+  { id: "inbox", label: "처리함", group: "운영", badge: "inbox" },
+  { id: "activity", label: "호출·감사", group: "운영" },
+  { id: "intake", label: "도입 심사", group: "MCP 수명주기", badge: "intake" },
+  { id: "servers", label: "MCP 서버", group: "MCP 수명주기" },
+  { id: "connections", label: "연결 통제", group: "MCP 수명주기", badge: "coverage" },
+  { id: "termination", label: "종료·폐기", group: "MCP 수명주기", badge: "termination" },
+  { id: "people", label: "사용자", group: "사람·기기" },
+  { id: "endpoints", label: "엔드포인트", group: "사람·기기" },
+  { id: "policy", label: "정책", group: "정책" },
+];
+const STAFF_PAGES = [
+  { id: "my", label: "내 MCP", group: "내 이용", badge: "consent" },
+  { id: "activity", label: "내 호출", group: "내 이용" },
 ];
 let viewer = null;
 let routeSeq = 0;
 let current = { page: "", arg: "", query: new URLSearchParams() };
-const badges = { approvals: 0, termination: 0, coverage: 0, consent: 0 };
+const badges = { inbox: 0, intake: 0, termination: 0, coverage: 0, consent: 0 };
+
+function userMenu() {
+  const items = [
+    viewer.admin && viewer.pages.includes("my") && html`<a href="#/my" data-i18n-ctx="nav">${icon("my")}<span>내 MCP</span>${badges.consent ? html`<span class="count">${badges.consent}</span>` : ""}</a>`,
+    viewer.kit && html`<a href="#" data-i18n-ctx="nav" data-act="pc-kit">${icon("plug")}<span>PC 연결 설정</span></a>`,
+    viewer.git_url && html`<a href="${sameSite(viewer.git_url)}" data-i18n-ctx="nav" target="_blank" rel="noopener">${icon("git")}<span>승인된 MCP 저장소</span><span class="ext" aria-hidden="true">↗</span></a>`,
+  ].filter(Boolean);
+  if (!items.length) return html`${viewer.name} · ${viewer.role_label}`;
+  return html`<details class="row-menu user-menu"><summary class="btn ghost">${viewer.name} · ${viewer.role_label}</summary>
+    <div class="menu" role="menu">${items}</div></details>`;
+}
 
 function renderNav(active) {
   const groups = new Map();
-  for (const p of PAGES.filter((x) => viewer.pages.includes(x.id))) {
+  for (const p of (viewer.admin ? PAGES : STAFF_PAGES).filter((x) => viewer.pages.includes(x.id))) {
     if (!groups.has(p.group)) groups.set(p.group, []);
-    groups.get(p.group).push({ ...p, label: p.id === "intake" && !viewer.admin ? "도입 신청" : p.label,
-      count: badges[p.badge] });
+    groups.get(p.group).push({ ...p, count: badges[p.badge] });
   }
-  const shortcuts = [
-    viewer.git_url && html`<a href="${sameSite(viewer.git_url)}" data-i18n-ctx="nav" target="_blank" rel="noopener" aria-label="사내 저장소 (새 탭)" title="사내 저장소">${icon("git")}<span>사내 저장소</span><span class="ext" aria-hidden="true">↗</span></a>`,
-    viewer.kit && html`<a href="#" data-i18n-ctx="nav" data-act="pc-kit" aria-label="PC 연결 설정" title="PC 연결 설정">${icon("plug")}<span>PC 연결 설정</span></a>`,
-  ].filter(Boolean);
   $("#nav").innerHTML = String(html`${[...groups].map(([group, pages]) => html`<div class="group" data-i18n-ctx="group">${group}</div>${pages.map((p) => html`
     <a href="#/${p.id}" data-i18n-ctx="nav" title="${p.label}" aria-label="${p.label}" ${active === p.id ? raw('aria-current="page"') : ""}>${icon(p.id)}<span>${p.label}</span>
-      ${p.count ? html`<span class="count">${p.count}</span>` : ""}</a>`)}`)}
-    ${shortcuts.length ? html`<div class="group">바로가기</div>${shortcuts}` : ""}`);
+      ${p.count ? html`<span class="count">${p.count}</span>` : ""}</a>`)}`)}`);
+  const identity = $("#app-identity");
+  if (identity) identity.innerHTML = String(userMenu());
 }
 
 function setNavCollapsed(closed) {
@@ -465,27 +477,36 @@ function parseHash() {
 }
 
 function canonicalRoute(at) {
+  const t = at.query.get("t");
+  const go = (page, tab, extra = {}) => {
+    const query = new URLSearchParams(at.query);
+    query.delete("t");
+    query.delete("approval_view");
+    if (tab) query.set("t", tab);
+    for (const [key, value] of Object.entries(extra)) query.set(key, value);
+    return { page, arg: "", query };
+  };
+  if (at.page === "consent") return go("my", "consent");
+  if (at.page === "intake" && !viewer.admin) return go("my", { approved: "available", list: "mine", new: "new" }[t] || "available");
   if (!viewer.admin) return at;
+  if (at.page === "security") return go("activity", { integration: "audit", incidents: "incidents" }[t] || "alerts");
+  if (at.page === "overview" && t === "approvals") return go("inbox", "", at.query.get("approval_view") === "history" ? { view: "history" } : {});
+  if ((at.page === "overview" && t === "unsent") || (at.page === "activity" && t === "unsent")) return go("inbox", "", { f: "execution" });
+  if ((at.page === "activity" && t === "approval-history") || (at.page === "approvals" && t === "history")) return go("inbox", "", { view: "history" });
+  if (at.page === "approvals") return t === "consent" ? go("my", "consent") : t === "unsent" ? go("inbox", "", { f: "execution" }) : go("inbox");
   const destinations = {
-    overview: at.query.get("t") === "traffic" ? ["activity", "stats"] : ["servers", "items"],
-    audit: at.query.get("t") === "incidents" ? ["security", "incidents"]
-      : at.query.get("t") === "siem" ? ["security", "integration"] : ["activity", "live"],
-    activity: at.query.get("t") === "unsent" ? ["overview", "unsent"]
-      : at.query.get("t") === "alerts" ? ["security", "alerts"]
-      : at.query.get("t") === "approval-history" ? ["overview", "approvals"]
-        : at.query.get("t") === "incidents" ? ["security", "incidents"]
-          : at.query.get("t") === "siem" ? ["security", "integration"] : ["activity", "live"],
+    overview: at.query.get("t") === "traffic" ? ["activity", "live"] : ["servers", "items"],
+    audit: at.query.get("t") === "incidents" ? ["activity", "incidents"]
+      : at.query.get("t") === "siem" ? ["activity", "audit"] : ["activity", "live"],
+    activity: at.query.get("t") === "siem" ? ["activity", "audit"] : ["activity", "live"],
     people: ["endpoints", at.query.get("t")],
     coverage: [["devices", "shadow"].includes(at.query.get("t")) ? "endpoints" : "servers", at.query.get("t") || "items"],
     servers: at.query.get("t") === "contract" ? ["servers", "servers"] : ["endpoints", "shadow"],
     "sbom-impact": ["servers", "servers"],
     intake: ["servers", "servers"],
-    approvals: at.query.get("t") === "consent" ? ["consent", "pending"]
-      : at.query.get("t") === "unsent" ? ["overview", "unsent"]
-        : ["overview", "approvals"],
     policy: ["servers", "capabilities"],
   };
-  if (at.page === "activity" && !["events", "siem", "incidents", "alerts", "unsent", "approval-history"].includes(at.query.get("t"))) return at;
+  if (at.page === "activity" && !["events", "siem"].includes(at.query.get("t"))) return at;
   if (at.page === "overview" && !["planes", "traffic"].includes(at.query.get("t"))) return at;
   if (at.page === "policy" && at.query.get("t") !== "capabilities") return at;
   if (at.page === "people" && !["devices", "managed"].includes(at.query.get("t"))) return at;
@@ -496,7 +517,6 @@ function canonicalRoute(at) {
   const query = new URLSearchParams(at.query);
   query.set("t", target[1]);
   if (at.page === "sbom-impact" || (at.page === "intake" && at.query.get("t") === "impact")) query.set("impact", "1");
-  if ((at.page === "activity" && at.query.get("t") === "approval-history") || (at.page === "approvals" && at.query.get("t") === "history")) query.set("approval_view", "history");
   if ((at.page === "audit" && target[1] === "live") || (at.page === "activity" && at.query.get("t") === "events")) {
     if (!query.has("since")) query.set("since", "");
     if (!query.has("event_kind")) query.set("event_kind", "");
@@ -607,7 +627,7 @@ const alertTarget = (a) => {
   const target = [...new Set([a.hostname || e.hostname, person].filter(Boolean))].join(" · ") || "—";
   if ((e.policy_id || "").startsWith("MCP-SHADOW-") || a.kind === "unapproved-endpoint-mcp") return [target, shadowLink(e.endpoint_id, e.record_kind, e.record_id)];
   if (a.kind === "endpoint-quarantined") return [target, `#/endpoints?t=devices&endpoint=${encodeURIComponent(e.endpoint_id || "")}`];
-  if (a.kind === "incident-deadline") return [`${e.jurisdiction || ""} ${e.stage || ""}`.trim() || "—", "#/security?t=incidents"];
+  if (a.kind === "incident-deadline") return [`${e.jurisdiction || ""} ${e.stage || ""}`.trim() || "—", "#/activity?t=incidents"];
   if (e.server_id) return [a.server_name || e.server_id, `#/servers/${encodeURIComponent(e.server_id)}`];
   return ["—", ""];
 };
@@ -1005,7 +1025,7 @@ function feedCharts() {
       const label = data.bucket === "hour" ? `${dayLabel(cursor)} ${pad(cursor.getHours())}${lang() === "en" ? ":00" : "시"}`
         : data.bucket === "day" ? `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`
           : `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}`;
-      series.push({ label, ...(occupied.get(at) || Object.fromEntries(DECISIONS.map((decision) => [decision, 0]))) });
+      series.push({ label, at, ...(occupied.get(at) || Object.fromEntries(DECISIONS.map((decision) => [decision, 0]))) });
       if (data.bucket === "month") cursor.setMonth(cursor.getMonth() + 1);
       else cursor.setTime(cursor.getTime() + (data.bucket === "day" ? 86400000 : 3600000));
     }
@@ -3895,7 +3915,18 @@ const FORMS = {
 const inboxContext = () => ({ html, raw, chip, kv, when, ago, short, empty, panel, head, kpiStrip, chartBox, json, entityRef, charts, openDrawer,
   api, gw, ACTION, DATA_CLASS, INTAKE_STATUS, MANAGED_STATE, ALERT_KIND, decisionChip, policyLabel, impactExplanation, alertTarget, alertDetail,
   alertGroups, alertsSeen, markAlertsSeen, approvalHistory, setApprovalLists, setLedger: (rows) => { policyLedger = rows; }, reload, refreshBadges });
-ROUTES.inbox = (arg, tab, query) => inboxRoute(inboxContext(), query);
+let inboxTimer = null;
+ROUTES.inbox = async (arg, tab, query) => {
+  const out = await inboxRoute(inboxContext(), query);
+  return { ...out, after: () => {
+    clearInterval(inboxTimer);
+    inboxTimer = setInterval(() => {
+      if (current.page !== "inbox") { clearInterval(inboxTimer); return; }
+      if (document.hidden || $("#drawer").classList.contains("open") || $("#dialog").open || document.activeElement?.closest?.("#view table")) return;
+      reload();
+    }, 15000);
+  } };
+};
 const myContext = () => ({ html, chip, when, short, empty, panel, head, page, api, viewer, INTAKE_STATUS, MANAGED_STATE, DATA_CLASS,
   consentTabs, consentRows: () => consentRows, approvedMcpTable, approvedMcpSearch: () => approvedMcpSearch, listToolbar, intakeNewBody });
 ROUTES.connections = ROUTES.connections || ((arg, tab, query) => ROUTES.servers(arg, tab || "items", query));

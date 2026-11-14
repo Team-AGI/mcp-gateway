@@ -6,7 +6,7 @@ import { fragments, pieces } from "./i18n-extract.mjs";
 
 const STATIC = new URL("../gateway/app/agent_static/", import.meta.url);
 const HANGUL = /[가-힣]/;
-const FILES = ["console.js", "console-state.mjs", "charts.mjs", "login.js", "signup.js", "console.html", "login.html", "signup.html"];
+const FILES = ["console.js", "console-state.mjs", "charts.mjs", "inbox.mjs", "my.mjs", "login.js", "signup.js", "console.html", "login.html", "signup.html"];
 // Text no screen shows: liveLabel is only exercised by tests, "시" is the Korean-only branch of an hour label.
 const NOT_SHOWN = new Set(["갱신 실패{}", "· 마지막 {}", "일시정지{}", "· 대기 {}건", "실시간 · {}", "실시간 · 연결 중", "시"]);
 
@@ -148,7 +148,7 @@ test("the consent page renders in English with no Korean left", async () => {
   when: (v) => v || "—", destinationText: (v) => (v || []).join(", ") || "없음", reload() {}, refreshBadges() {}, toast() {} });
   vm.runInContext(`${safeHTML}\n${panel}\nconst chip = (tone, label) => html\`<span class="chip \${tone}">\${label}</span>\`;
     const empty = (label) => html\`<div>\${label}</div>\`;\n${route}`, context);
-  const page = await context.ROUTES.consent();
+  const page = { tabs: await context.consentTabs() };
   const markup = page.tabs.map((tab) => `<h2>${tab.label}</h2>${tab.body}`).join("");
   const english = pieces(String(markup)).map((piece) => translator.translate(piece));
   assert.ok(english.includes("Allow all") && english.includes("Reject all"), english.join("|"));
