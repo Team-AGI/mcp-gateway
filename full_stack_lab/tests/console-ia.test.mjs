@@ -306,8 +306,8 @@ test("관리자는 분리된 관리 메뉴를 순서대로, 직원과 협력사�
     assert.doesNotMatch(markup, /서비스 계정 연결/);
     if (admin) assert.match(markup, /보안 관리/);
     assert.doesNotMatch(markup, /접근 통제|내 연결/);
-    assert.match(markup, admin ? /도입 관리/ : /도입 신청/);
-    if (admin) assert.match(markup, /종료 및 폐기/);
+    assert.match(markup, admin ? /도입 심사/ : /도입 신청/);
+    if (admin) assert.match(markup, /종료·폐기/);
   }
 });
 
@@ -407,7 +407,7 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
   assert.match(String(serversWithImpact.html.tabs[2].body), /영향 서버[^]*sbom-impact-stop[^]*Docs[^]*영향 있음[^]*1\.2\.0[^]*server-suspend/);
   assert.equal(serversWithImpact.html.tabs.length, 3);
   const intake = await ui.ROUTES.intake("", "", new URLSearchParams());
-  assert.deepEqual(Array.from(intake.html.tabs, (t) => t.key), ["list", "requests", "new", "approved"]);
+  assert.deepEqual(Array.from(intake.html.tabs, (t) => t.key), ["review", "list", "requests", "new"]);
 });
 
 test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승인본 갱신을 유지한다", async () => {

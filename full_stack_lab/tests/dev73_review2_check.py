@@ -79,11 +79,11 @@ class ReviewFixes(unittest.TestCase):
         self.assertIn('principal: str | None = None', source)
 
         console = (APP / "agent_static" / "console.js").read_text(encoding="utf-8")
-        approval = console[console.index("function intakeApprovalFields("):console.index("async function showIntakeApproval(")]
+        approval = console[console.index("function intakeProposalView("):console.index("function intakeScopeFields(")]
         self.assertIn('const localRun = out.local_execution || p.local_execution || r.local_execution || r.evidence?.local_execution;', approval)
         self.assertIn("<legend>엔드포인트 실행</legend>", approval)
         self.assertIn("localRun.user_mapping || unknown", approval)
-        self.assertIn('async "intake-one-click"', console)
+        self.assertIn('"intake-one-click": (el) =>', console)
         self.assertNotIn('async "intake-approve"', console)
         self.assertNotIn('async "intake-approve-risk"', console)
 

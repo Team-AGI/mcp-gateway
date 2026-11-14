@@ -89,7 +89,7 @@ const empty = (v) => v;
 ${catalog}
 String(catalogResults({requests: [{status: "APPROVED", internal_repo_url: "/git/mcp/notes"}]}));`);
   assert.ok(!result.includes("/git/"));
-  assert.ok(source.includes('viewer.admin && r.internal_repo_url ? html`<a'));
+  assert.ok(source.includes('r.internal_repo_url ? html`<div class="row-actions"><a class="btn sm"'));
 });
 
 test("source download uses the console route, bearer header and fixed filename", async () => {
