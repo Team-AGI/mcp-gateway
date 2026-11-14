@@ -1,8 +1,8 @@
 # 저장소 코드 스냅샷
 
-확인 시각: 2026-11-14T16:02:56+09:00
+확인 시각: 2026-11-14T16:11:05+09:00
 
-HEAD: `3f26968dee8c307eb8e19649d9bf2824783d702d` · 로컬 브랜치: `fix/local-prepare-lock`
+HEAD: `c197d723eb3f5cf77c47efc366852f4a4d2e6a83` · 로컬 브랜치: `fix/local-prepare-lock`
 
 로컬 코드 상태입니다. 배포·활성화·실기기 검증과 실험 성공을 증명하지 않습니다.
 
@@ -10,19 +10,11 @@ HEAD: `3f26968dee8c307eb8e19649d9bf2824783d702d` · 로컬 브랜치: `fix/local
 
 ```text
 M .github/release/mint/CHANGELOG.md
- M .github/release/mint/README.en.md
- M .github/release/mint/README.md
- M .github/release/mint/deploy/README.md
  M CHANGELOG.md
- M README.en.md
- M README.md
- M VERSION
- M deploy/README.md
  M endpoint-agent/stdio_source.py
  M full_stack_lab/tests/endpoint_stdio_check.py
  M research/llm-wiki/analysis/integration-cases.json
  M research/llm-wiki/analysis/requirements.json
- M research/llm-wiki/catalogs/threats.json
 ```
 
 ## 주요 파일 바이트

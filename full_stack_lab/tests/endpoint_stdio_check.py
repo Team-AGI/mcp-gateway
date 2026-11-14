@@ -106,6 +106,22 @@ class Preparation(unittest.TestCase):
         with self.assertRaises(ValueError):source.prepare(self.config,self.body,self.request)
         self.assertTrue(checked)
 
+    def test_a_restarted_runner_keeps_the_last_full_check(self):
+        # After a kit reinstall the runner restarts; the first call redid the full check (pj3: about a minute, past
+        # the call deadline). The last fingerprint stays in the protected folder; a changed file still fails closed.
+        source.prepare(self.config,self.body,self.request)
+        checked=[]
+        restarted={**self.config,'source_protected':lambda path:checked.append(path) or True}
+        restarted.pop('verified_sources',None)
+        _,folder,_=source.prepare(restarted,self.body,self.request)
+        self.assertEqual(checked,[])
+        self.assertEqual(self.request.call_count,1)
+        (folder/'source/main.py').write_text('changed')
+        again={**self.config,'source_protected':lambda path:checked.append(path) or True}
+        again.pop('verified_sources',None)
+        with self.assertRaises(ValueError):source.prepare(again,self.body,self.request)
+        self.assertTrue(checked)
+
     def test_target_lock_download_and_runtime_mismatch(self):
         from collections import namedtuple
         Version = namedtuple("Version", "major minor")
