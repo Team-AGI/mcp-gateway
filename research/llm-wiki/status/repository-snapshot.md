@@ -1,8 +1,8 @@
 # 저장소 코드 스냅샷
 
-확인 시각: 2026-11-14T15:12:44+09:00
+확인 시각: 2026-11-14T15:23:20+09:00
 
-HEAD: `5edcd2e4324a808d35067506af85f5ca94918a81` · 로컬 브랜치: `fix/codex-app-process-shadow`
+HEAD: `f9ca6a1592b5f675d098927a36f07e8a14244bd4` · 로컬 브랜치: `fix/codex-app-process-shadow`
 
 로컬 코드 상태입니다. 배포·활성화·실기기 검증과 실험 성공을 증명하지 않습니다.
 
@@ -10,17 +10,12 @@ HEAD: `5edcd2e4324a808d35067506af85f5ca94918a81` · 로컬 브랜치: `fix/codex
 
 ```text
 M .github/release/mint/CHANGELOG.md
- M .github/release/mint/README.en.md
- M .github/release/mint/README.md
- M .github/release/mint/deploy/README.md
  M CHANGELOG.md
- M README.en.md
- M README.md
- M VERSION
- M deploy/README.md
- M endpoint-agent/agent.py
+ M full_stack_lab/gateway/app/endpoint_plane.py
+ M full_stack_lab/tests/endpoint_snapshot_check.py
  M research/llm-wiki/analysis/integration-cases.json
  M research/llm-wiki/analysis/requirements.json
+ M research/llm-wiki/catalogs/threats.json
 ```
 
 ## 주요 파일 바이트
