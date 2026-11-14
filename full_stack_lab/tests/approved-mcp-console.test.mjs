@@ -69,18 +69,20 @@ test("available MCP labels translate into English", () => {
   }
 });
 
-// D-262 정정: 직원도 바로가기로 사내 저장소를 읽는다(다운로드는 /auth/gitea가 막는다). 신청 행에는 저장소 링크가 없다.
-test("employee navigation shows the internal repository shortcut; intake rows do not link to Gitea", () => {
+// 사내 저장소 링크는 사이드바가 아니라 상단 사용자 메뉴 한 곳에만 둔다. 신청 행에는 저장소 링크가 없다.
+test("the repository link lives in the top bar only; intake rows do not link to Gitea", () => {
   const nav = source.slice(source.indexOf("function renderNav("), source.indexOf("function setNavCollapsed("));
   const run = runInNewContext(`${safe}
 let output;
-const viewer = {admin: false, git_url: "/git/mcp", pages: []};
+const viewer = {admin: false, git_url: "/git/mcp", kit: false, pages: []};
 const PAGES = [], badges = {};
 const $ = () => ({set innerHTML(v) {output = v;}});
 const sameSite = (v) => v, icon = () => "";
 ${nav}
 renderNav("intake"); output;`);
-  assert.ok(run.includes("/git/mcp"));
+  assert.ok(!run.includes("/git/mcp"));
+  assert.match(readFileSync(new URL("../gateway/app/agent_static/console.html", import.meta.url), "utf8"), /id="repo-link"[^>]*hidden/);
+  assert.match(source, /repo\.href = sameSite\(viewer\.git_url\)/);
   const catalog = source.slice(source.indexOf("function catalogResults("), source.indexOf("const CONSENT_STATUS ="));
   const result = runInNewContext(`${safe}
 const viewer = {admin: false}, NONE = "—", INTAKE_STATUS = {APPROVED: ["", "승인"]};

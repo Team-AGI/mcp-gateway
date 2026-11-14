@@ -54,13 +54,10 @@ def build():
                          "category": classification["category"], "implementation": classification["enforced_by"],
                          "has_rule": pid in rules, "has_test_definition": pid in tests,
                          "candidate_rule_ids": candidates,
-                         # What the source review found, not what a rule's existence suggests.
-                         "status": classification["status"], "limitation": classification.get("note", ""),
                          "rule_runtime": pac_loaded and pid in rules,
                          "runtime_rule_ids": [c for c in candidates if c in ledger]})
-    counts = {s: sum(p["status"] == s for p in policies) for s in STATUS}
     return {"schema": 1, "source_sha256": hashlib.sha256(sheet_bytes).hexdigest(),
-            "summary": {"status": counts, "pac_runtime_loaded": pac_loaded,
+            "summary": {"pac_runtime_loaded": pac_loaded,
                         "with_runtime_rule": sum(bool(p["runtime_rule_ids"]) for p in policies)},
             "classification_sha256": hashlib.sha256(classification_bytes).hexdigest(), "policies": policies}
 

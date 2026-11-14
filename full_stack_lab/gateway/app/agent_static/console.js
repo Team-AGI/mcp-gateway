@@ -1,4 +1,4 @@
-import { lang, locale, t, clockText, dateTimeText } from "./i18n.mjs";
+import { lang, t, clockText, dateTimeText } from "./i18n.mjs";
 import { mergeRows, harnessLabel, DECISIONS,
   statusView, dedupeItems, connectorControl, pipelineOf, resourceValues, observationRows, listenerCoverage,
   msText, pctText, LATENCY_STAGE, timingRows, privacyText,
@@ -176,12 +176,6 @@ async function planes() {
 }
 const ACTION = { r: "읽기", w: "쓰기", x: "외부 전송·실행" };
 const DATA_CLASS = { public: "공개", nonimportant: "내부", important: "중요" };
-const countryNames = new Intl.DisplayNames([locale()], { type: "region" });
-const locationRows = (value = {}) => [
-  ["처리 국가", (value.processing_countries || []).map((c) => countryNames.of(c)).join(", ") || "—"],
-  ["저장 국가", (value.storage_countries || []).map((c) => countryNames.of(c)).join(", ") || "—"],
-  ["처리 주체", value.processor || "—"], ["위치 근거", value.evidence_ref || "—"], ["이전 근거", value.transfer_basis || "—"],
-];
 const ROLE = { admin: "관리자", employee: "직원", partner: "협력사" };
 const PLATFORM_KIT = { linux: "Linux", macos: "macOS", windows: "Windows" };
 const KIT_FILE = { linux: "mcp-managed-setup-linux", macos: "mcp-connect-macos.command", windows: "mcp-managed-setup-windows.exe" };
@@ -415,14 +409,14 @@ const chartBox = (id, label, size = "") => html`<div class="chart ${size}" id="$
 const PAGES = [
   { id: "overview", label: "대시보드", group: "운영", badge: "approvals" },
   { id: "activity", label: "호출 기록", group: "운영" },
-  { id: "security", label: "보안 관제", group: "운영" },
+  { id: "security", label: "보안 관제", group: "운영", hiddenForAdmin: true },
   { id: "servers", label: "AI 연결 관리", group: "보안 관리", badge: "coverage" },
   { id: "people", label: "사용자 관리", group: "보안 관리" },
   { id: "endpoints", label: "엔드포인트 관리", group: "보안 관리" },
   { id: "policy", label: "보안 관리 정책", group: "보안 관리" },
   { id: "intake", label: "도입 관리", group: "도입 및 종료" },
   { id: "termination", label: "종료 및 폐기", group: "도입 및 종료", badge: "termination" },
-  { id: "consent", label: "도구 이용 동의", group: "이용 설정", badge: "consent" },
+  { id: "consent", label: "도구 이용 동의", group: "이용 설정", badge: "consent", hiddenForAdmin: true },
 ];
 let viewer = null;
 let routeSeq = 0;
@@ -431,13 +425,12 @@ const badges = { approvals: 0, termination: 0, coverage: 0, consent: 0 };
 
 function renderNav(active) {
   const groups = new Map();
-  for (const p of PAGES.filter((x) => viewer.pages.includes(x.id))) {
+  for (const p of PAGES.filter((x) => viewer.pages.includes(x.id) && !(x.hiddenForAdmin && viewer.admin))) {
     if (!groups.has(p.group)) groups.set(p.group, []);
     groups.get(p.group).push({ ...p, label: p.id === "intake" && !viewer.admin ? "도입 신청" : p.label,
       count: badges[p.badge] });
   }
   const shortcuts = [
-    viewer.git_url && html`<a href="${sameSite(viewer.git_url)}" data-i18n-ctx="nav" target="_blank" rel="noopener" aria-label="사내 저장소 (새 탭)" title="사내 저장소">${icon("git")}<span>사내 저장소</span><span class="ext" aria-hidden="true">↗</span></a>`,
     viewer.kit && html`<a href="#" data-i18n-ctx="nav" data-act="pc-kit" aria-label="PC 연결 설정" title="PC 연결 설정">${icon("plug")}<span>PC 연결 설정</span></a>`,
   ].filter(Boolean);
   $("#nav").innerHTML = String(html`${[...groups].map(([group, pages]) => html`<div class="group" data-i18n-ctx="group">${group}</div>${pages.map((p) => html`
@@ -1381,7 +1374,6 @@ async function showApproval(id) {
       ["엔드포인트", a.client?.workstation], ["하네스", a.client?.harness?.name ? harnessLabel(a.client.harness.name) : a.client?.agent],
       ["요청 시각", when(a.created_at, { seconds: true })], ["만료 시각", when(a.expires_at)]]) },
     { key: "args", label: "인자", body: json(a.arguments) },
-    ...((a.residency_targets || []).length ? [{ key: "locations", label: "처리·저장 위치", body: html`${a.residency_targets.map((target) => html`<h3>${target.id}</h3>${kv(locationRows(target))}`)}` }] : []),
     { key: "policy", label: "정책", body: html`${a.reason ? html`<p class="note">${a.reason}</p>` : ""}${kv([
       ["정책", html`<code>${a.policy_id || "—"}</code>`], ["행위", ACTION[a.action] || a.action], ["데이터 등급", DATA_CLASS[a.data_class] || a.data_class],
       ["분류 근거", a.summary]])}` },
@@ -1477,7 +1469,6 @@ function showServer(id) {
       ${s.lifecycle !== "RETIRED" ? html`<button class="btn sm" type="button" data-act="server-check" data-id="${s.id}">연결 확인</button>` : ""}
       ${registration && !registration.intake_id ? chip("block", "도입 신청 없음 · 차단") : ""}
       ${registration && tools.some((t) => registration.tools?.[t.name] && !registration.tool_reviews?.[t.name]) ? html`<button class="btn sm primary" type="button" data-act="tool-scope" data-id="${s.id}">범위 심사</button>` : ""}
-      ${registration?.intake_id && s.deployment === "provider" ? html`<button class="btn sm primary" type="button" data-act="residency-review" data-id="${s.id}">위치 심사</button>` : ""}
       ${registration?.intake_id ? html`<button class="btn sm" type="button" data-act="server-audience" data-id="${s.id}">사용 대상</button>` : ""}
       ${registration ? html`<button class="btn sm danger" type="button" data-act="server-deregister" data-id="${s.id}">등록 해제</button>` : ""}</div>
     ${s.status_reason ? html`<p class="note ${s.status !== "READY" ? "warn" : ""}">${s.status_reason}</p>` : ""}`, [
@@ -1485,8 +1476,6 @@ function showServer(id) {
       ["패키지", html`<code>${s.source_ref || `${s.package}@${s.version}`}</code>`], ["원격 주소", html`<code>${s.endpoint}</code>`],
       ["공급자", s.supplier], ["라이선스", s.license], ["하위 시스템", downstreamText(s.downstream)],
       ...(registration?.supplier_assurance ? assuranceRows(registration.supplier_assurance) : []),
-      ...locationRows(s.residency),
-       ...(registration?.residency_review ? [["위치 심사", `${registration.residency_review.reviewed_by} · ${when(registration.residency_review.reviewed_at)}`]] : []),
       ...(registration?.risk_assessment ? [["위험 등급", chip(...RISK_TIER[registration.risk_assessment.tier])],
         ["처리 개인정보", RISK_CHOICES.personal_data[registration.risk_assessment.input.personal_data]],
         ["외부 전송", registration.risk_assessment.input.external_transfer ? "있음" : "없음"],
@@ -2140,8 +2129,6 @@ const supportStatus = (date) => !date ? "" : date < new Date().toISOString().sli
 const ASSURANCE_LABELS = { legal_entity: "법인명", supplier_contact: "연락처", security_contact: "보안 연락처",
   vulnerability_policy_url: "취약점 정책 주소", subprocessors: "하위 처리자", contract_basis_ref: "계약 근거",
   exit_strategy: "종료 전략", support_end: "지원 종료" };
-const LOCATION_LABELS = { processing_countries: "처리 국가 코드", storage_countries: "저장 국가 코드",
-  processor: "처리 주체", evidence_ref: "위치 근거", transfer_basis: "이전 근거" };
 
 const UNCONFIRMED = "확인 안 됨";
 const given = (a, key) => { const v = a?.[key]; return typeof v === "boolean" || (typeof v === "string" && v.trim() && v !== "미확인") ? v : null; };
@@ -2163,7 +2150,6 @@ function intakeApprovalFields(out) {
   const count = out.gate.critical?.count || 0;
   const unknown = "확인 안 됨";
   const assurance = scope?.supplier_assurance || p.supplier_assurance;
-  const location = scope?.residency || {};
   const localRun = out.local_execution || p.local_execution || r.local_execution || r.evidence?.local_execution;
   return html`<fieldset><legend>제안값</legend>
     ${kv([["주소", p.endpoint || r.repository_url], ["판본", r.commit_sha || p.catalog?.version || unknown],
@@ -2171,8 +2157,7 @@ function intakeApprovalFields(out) {
       ["데이터 등급", DATA_CLASS[p.data_class]], ["위험 등급", chip(...(RISK_TIER[p.risk.tier] || ["alert", unknown]))],
       ["원격 도메인", r.endpoint_url ? new URL(r.endpoint_url).hostname : "—"],
       ["계약 지문", p.catalog?.catalog_hash || unknown], ["허용 사용자", r.submitter_name || r.submitted_by],
-      ["공급자 홈페이지", p.supplier_metadata?.homepage || unknown], ["라이선스", p.provenance?.license?.spdx || unknown],
-      ["관할 규칙", p.jurisdiction_pack_enabled ? "사용" : "사용 안 함"]])}
+      ["공급자 홈페이지", p.supplier_metadata?.homepage || unknown], ["라이선스", p.provenance?.license?.spdx || unknown]])}
     ${localRun ? html`<fieldset><legend>엔드포인트 실행</legend>${kv([
       ["관찰 엔드포인트", localRun.observer_device || unknown],
       ["실행 계정 번호", localRun.observer_uid == null ? unknown : String(localRun.observer_uid)],
@@ -2201,13 +2186,10 @@ function intakeApprovalFields(out) {
     : html`${field.select("valid_days", "사용 기한", VALIDITY, "90")}${audienceFields("all")}`}
   ${count && !pending ? field.text("critical_reason", "치명적 발견 수용 사유", 'required minlength="10" maxlength="1000"') : ""}
   ${p.risk.tier === "very_high" ? field.text("risk_reason", "위험 수용 사유", 'required minlength="10" maxlength="1000"') : ""}
-  <details ${p.jurisdiction_pack_enabled ? raw("open") : ""}><summary>${p.jurisdiction_pack_enabled ? "추가 정보" : "추가 정보(선택)"}</summary>
-    ${pending ? kv([...Object.entries(LOCATION_LABELS).map(([key, label]) => [label, Array.isArray(location[key]) ? location[key].join(", ") : location[key] || "—"]),
-      ["수용 사유", pending.critical_reason || "—"]]) : html`<div class="grid c2">
+  <details><summary>추가 정보(선택)</summary>
+    ${pending ? kv([["수용 사유", pending.critical_reason || "—"]]) : html`<div class="grid c2">
       ${Object.entries(ASSURANCE_LABELS).map(([key, label]) => field.text(`assurance_${key}`, label,
         key === "support_end" ? 'type="date"' : 'maxlength="500"', assurance[key] || ""))}
-      ${Object.entries(LOCATION_LABELS).map(([key, label]) => field.text(`location_${key}`, label,
-        `maxlength="500" ${p.jurisdiction_pack_enabled && p.data_class !== "public" && key !== "transfer_basis" ? "required" : ""}`, ""))}
     </div><details><summary>영향평가 제안값</summary>${kv(Object.entries(RISK_CHOICES).map(([key, values]) =>
       [{ data_class: "데이터 등급", personal_data: "처리 개인정보", external_transfer: "외부 전송", permission: "실행 권한", autonomy: "자율성" }[key],
         key === "external_transfer" ? (p.risk_input[key] ? "있음" : "없음") : values[p.risk_input[key]]]))}</details>
@@ -2277,13 +2259,9 @@ async function showIntakeApproval(id) {
     .filter((name) => (out.proposal.address_tools || []).includes(name)).map((name) => [name, hostList(fd.get(`destinations_${name}`))]));
   const assurance = scope?.supplier_assurance || Object.fromEntries(Object.keys(ASSURANCE_LABELS)
     .map((key) => [key, String(fd.get(`assurance_${key}`) || "").trim()]).filter(([, value]) => value));
-  const location = scope?.residency || Object.fromEntries(Object.keys(LOCATION_LABELS).map((key) => {
-    const value = String(fd.get(`location_${key}`) || "").trim();
-    return [key, key.endsWith("countries") ? value.split(",").map((v) => v.trim().toUpperCase()).filter(Boolean) : value];
-  }));
   const result = await api(`/api/mcp-requests/${id}/approve-and-register`, { method: "POST", body: {
     proposal_sha256: out.proposal_sha256, tools: selected, valid_days: scope?.valid_days || Number(fd.get("valid_days")),
-    critical_reason: String(fd.get("critical_reason") || "").trim(), risk_reason: String(fd.get("risk_reason") || "").trim(), supplier_assurance: assurance, residency: location, actions, destinations,
+    critical_reason: String(fd.get("critical_reason") || "").trim(), risk_reason: String(fd.get("risk_reason") || "").trim(), supplier_assurance: assurance, actions, destinations,
     ...(scope ? { audience: scope.audience || "all", audience_users: scope.audience_users || [] } : audienceBody(fd)) } });
   toast(result.message); reload();
 }
@@ -2408,7 +2386,7 @@ async function showIntakeReport(id) {
         ${panel("계약 검토", review ? kv([["검토 내용", review.review_note], ["검토자", `${review.reviewed_by} · ${when(review.reviewed_at)}`],
           ["허용 사용자", audienceText(review.allowed_principals)], ["사용 기한", when(review.valid_until)],
           ["서버", `${review.advertised_name} ${review.version}`], ["계약 해시", html`<code>${review.registration.catalog_hash}</code>`],
-          ["승인 도구", Object.keys(review.registration.tools || {}).join(", ")], ...locationRows(review.registration.residency)]) : empty("검토 전"))}
+          ["승인 도구", Object.keys(review.registration.tools || {}).join(", ")]]) : empty("검토 전"))}
         ${panel("허용 인자 범위", review ? html`<pre>${JSON.stringify(review.parameter_constraints || {}, null, 2)}</pre>` : empty("검토 전"))}
         ${panel("도입 승인", approval ? kv([["승인", `${approval.actor} · ${when(approval.at)}`], ["위험 수용", approval.risk_acceptance],
           ["검토 해시", html`<code>${approval.review_digest}</code>`]]) : empty("승인 전"))}
@@ -2722,14 +2700,8 @@ const alertsTab = (alertData, q) => alertData ? html`${kv([["기간", q.get("hou
   : empty("", { failed: true });
 let policyEvidence = {};
 let organizationPolicies = [];
-const organizationImplementation = (p) => ({ rego: "판정 코드", "rego+sensor": "판정 코드와 입력 연동", solution: "솔루션 기능" }[p.implementation] || "—");
-const organizationCode = (p) => p.has_rule ? (p.rule_runtime ? "작성·운영 적용" : "작성·운영 미적용") : p.category === "excluded" ? "적용 범위 제외"
-  : p.implementation === "solution" ? "해당 없음" : "미작성";
-const ORG_STATUS = { 구현: ["allow", "구현"], 부분: ["alert", "부분 구현"], 없음: ["block", "미구현"], "구조적 차단": ["plain", "구조적 차단"] };
-const organizationStatus = (p) => chip(...(ORG_STATUS[p.status] || ["outline", "미확인"]));
 const organizationRuntime = (p) => (p.runtime_rule_ids || []).length ? `대응 규칙 ${p.runtime_rule_ids.length}개`
   : p.implementation === "solution" ? "솔루션 기능" : "운영 판정 없음";
-const organizationSummary = (s) => s?.status ? Object.entries(ORG_STATUS).map(([k, [, label]]) => `${label} ${s.status[k] ?? 0}`).join(" · ") : "";
 
 const policyExecutor = (p) => ({ opa: "정책 엔진", gateway: "게이트웨이", endpoint: "엔드포인트", vendor: "벤더" }[p.enforced_by] || "—");
 const policyEnvironment = (env) => ({ prod: "운영 환경", stage: "사전 검증 환경", dev: "개발 환경" }[env] || "—");
@@ -2794,13 +2766,13 @@ ROUTES.policy = async (_, tab) => {
         data-mode="${enforcement === "enforce" ? "monitor" : "enforce"}">${enforcement === "enforce" ? "관찰 모드로 전환" : "집행 모드로 전환"}</button>` }),
       active: tab === "organization" ? "organization" : "ledger",
       tabs: [{ key: "organization", label: "전체 보안 정책", n: organizationPolicies.length, body:
-        panel("전체 보안 정책", html`<table class="data"><thead><tr><th>번호</th><th>정책 대상</th><th>적용 단계</th><th>구현 상태</th><th>운영 판정</th><th>한계</th></tr></thead><tbody id="organization-policy-list">
+        panel("전체 보안 정책", html`<table class="data"><thead><tr><th>번호</th><th>정책 대상</th><th>적용 단계</th><th>운영 판정</th></tr></thead><tbody id="organization-policy-list">
           ${organizationPolicies.map((p) => html`<tr class="clickable" tabindex="0" data-act="organization-policy" data-id="${p.id}">
-            <td class="mono">${p.id}</td><td>${p.name}</td><td>${p.stage}</td><td>${organizationStatus(p)}</td>
-            <td>${organizationRuntime(p)}</td><td class="small">${short(p.limitation || "—", 80)}</td></tr>`)}
+            <td class="mono">${p.id}</td><td>${p.name}</td><td>${p.stage}</td>
+            <td>${organizationRuntime(p)}</td></tr>`)}
           </tbody></table><p class="empty" role="status" data-list-empty="organization-policy-list" hidden>조건에 맞는 결과 없음</p>
           ${organizationPolicies.length ? "" : empty(ledger.organization?.source_state === "available" ? "등록된 조직 정책 없음" : "조직 정책 원본 조회 실패")}`,
-          { flush: true, sub: organizationSummary(ledger.organization?.summary), tools: listToolbar("organization-policy-list", "정책 번호·대상·단계 검색") }) },
+          { flush: true, tools: listToolbar("organization-policy-list", "정책 번호·대상·단계 검색") }) },
         { key: "ledger", label: "보안 통제 규칙", n: policyLedger.length, body: html`<div class="stack">
         ${panel(html`<span class="policy-load-title"><span>정책 로드 상태</span><span class="sub">${ledger.record_window_hours === 24 ? "최근 24시간" : "—"}</span></span>`, html`<div class="policy-load-details">${kv([
           [html`<span title="MINT 게이트웨이의 배포 대상 Rego 규칙 코드와 OPA에 실제로 로드된 대응 규칙 코드가 일치하는지 해시로 비교합니다.">룰셋 일치 여부</span>`, policyDeployLabel(ledger, "rules_match")],
@@ -3572,24 +3544,6 @@ const ACTIONS = {
         high_impact: Boolean(high_impact), impact_domains: impact_domains || [] } } } });
     toast("기록했습니다."); closeDrawer(); reload();
   },
-  async "residency-review"(el) {
-    const s = registry?.servers.find((row) => row.id === el.dataset.id);
-    if (!s) return;
-    const current = s.residency || {};
-    const fd = await ask({ title: `위치 심사 · ${s.display_name}`, fields: html`<div class="stack">
-      ${field.text("processing_countries", "처리 국가", 'required maxlength="749"', (current.processing_countries || []).join(", "))}
-      ${field.text("storage_countries", "저장 국가", 'required maxlength="749"', (current.storage_countries || []).join(", "))}
-      ${field.text("processor", "처리 주체", 'required maxlength="500"', current.processor || "")}
-      ${field.text("evidence_ref", "위치 근거", 'required maxlength="500"', current.evidence_ref || "")}
-      ${field.text("transfer_basis", "이전 근거", 'maxlength="500"', current.transfer_basis || "")}</div>`, confirm: "기록" });
-    if (!fd) return;
-    const countries = (key) => String(fd.get(key)).split(",").map((code) => code.trim().toUpperCase()).filter(Boolean);
-    await gw(`registry/servers/${encodeURIComponent(el.dataset.id)}/residency`, { method: "POST", body: {
-      processing_countries: countries("processing_countries"), storage_countries: countries("storage_countries"),
-      processor: String(fd.get("processor")).trim(), evidence_ref: String(fd.get("evidence_ref")).trim(),
-      transfer_basis: String(fd.get("transfer_basis")).trim() } });
-    closeDrawer(); toast("위치 심사를 기록했습니다."); reload();
-  },
   async "intake-reject"(el) {
     const fd = await ask({ title: "도입 신청 거부", fields: field.text("note", "사유", 'required minlength="2" maxlength="500"'), confirm: "거부", danger: true });
     if (!fd) return;
@@ -3604,9 +3558,6 @@ const ACTIONS = {
       { key: "definition", label: "정책 정의", body: kv([["정책 번호", p.id], ["적용 단계", p.stage], ["정책 대상", p.name],
         ["정책 내용", p.content], ["적용 조건", p.condition], ["통과 요건", p.pass_condition], ["차단 요건", p.block_condition],
         ["필요 증빙", p.required_evidence]]) },
-      { key: "implementation", label: "구현과 적용", body: kv([["구현 상태", organizationStatus(p)], ["한계", p.limitation || "—"],
-        ["운영 판정", organizationRuntime(p)], ["구현 방식", organizationImplementation(p)], ["정책 규칙", organizationCode(p)],
-        ["시험 정의", p.has_test_definition ? "있음" : "없음"], ["조직 적용 확인", "미확인"]]) },
       { key: "rules", label: "운영 대응 규칙", body: html`${candidates.length ? html`<div class="row-actions">${candidates.map((id) => html`<button class="btn" type="button" data-act="policy" data-id="${id}">${policyLedger.find((rule) => rule.policy_id === id).name}</button>`)}</div>` : empty("운영 대응 규칙 없음")}` },
     ]);
   },
@@ -3627,7 +3578,7 @@ const ACTIONS = {
         ["관찰 모드 처리", { protected: "관찰 모드에서도 차단 유지", eligible: "관찰 모드 전환 가능" }[p.monitor_behavior] || "—"],
         ["등록 상태", ["운영", "중지", "폐기"].includes(p.status) ? p.status : "—"],
         ["최근 24시간 판정", policyRecordLabel(p)], ["최종 판정 기록 수", p.recent?.count ?? "—"],
-        ["마지막 판정 시각", when(p.recent?.last_seen_at)], ["집행 경로 시험", "미수행"],
+        ["마지막 판정 시각", when(p.recent?.last_seen_at)], 
         ["평가 우선순위", p.priority ?? "—"],
         ["대상 환경", Array.isArray(p.environments) ? p.environments.map(policyEnvironment).join(", ") : "—"]]) },
       { key: "mapping", label: "정책 연결", body: kv([["관련 보안 정책", links.join(", ") || "매핑 미확인"],
@@ -4105,6 +4056,8 @@ async function boot() {
   const mobile = matchMedia("(max-width: 900px)");
   setNavCollapsed(mobile.matches || localStorage.getItem(NAV_KEY) === "true");
   mobile.addEventListener("change", () => setNavCollapsed(mobile.matches || localStorage.getItem(NAV_KEY) === "true"));
+  const repo = $("#repo-link");
+  if (viewer.git_url && repo) { repo.href = sameSite(viewer.git_url); repo.hidden = false; }
   $("#app-identity").textContent = `${viewer.name} · ${t(viewer.role_label)}`;
   window.addEventListener("hashchange", route);
   await route();

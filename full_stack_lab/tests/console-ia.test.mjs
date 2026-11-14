@@ -297,7 +297,8 @@ test("관리자는 분리된 관리 메뉴를 순서대로, 직원과 협력사�
   for (const admin of [true, false]) {
     const ui = build(admin); ui.renderNav("activity");
     const markup = ui.node("#nav").innerHTML;
-    assert.deepEqual([...markup.matchAll(/href="#\/([\w-]+)"/g)].map((m) => m[1]), admin ? adminPages : ["activity", "intake", "consent"]);
+    assert.deepEqual([...markup.matchAll(/href="#\/([\w-]+)"/g)].map((m) => m[1]),
+      admin ? adminPages.filter((id) => !["security", "consent"].includes(id)) : ["activity", "intake", "consent"]);
     assert.match(markup, /호출 기록/);
     assert.doesNotMatch(markup, /서비스 계정 연결/);
     if (admin) assert.match(markup, /보안 관리/);
@@ -314,8 +315,11 @@ test("대시보드 호출 승인과 내 계정 이용 동의 배지를 분리한
   await ui.refreshBadges();
   const nav = ui.node("#nav").innerHTML;
   assert.match(nav, /href="#\/overview"[^]*?<span class="count">2<\/span>/);
-  assert.match(nav, /href="#\/consent"[^]*?<span class="count">2<\/span>/);
+  assert.doesNotMatch(nav, /href="#\/consent"|href="#\/security"/);
   assert.match(nav, /href="#\/servers"[^]*?<span class="count">4<\/span>/);
+  const staff = build(false, { "/api/consents": { consents: [{ status: "PENDING", server_id: "a" }, { status: "PENDING", server_id: "a" }, { status: "PENDING", server_id: "b" }] } });
+  await staff.refreshBadges();
+  assert.match(staff.node("#nav").innerHTML, /href="#\/consent"[^]*?<span class="count">2<\/span>/);
   assert.doesNotMatch(nav, /href="#\/coverage"/);
   assert.doesNotMatch(nav, /href="#\/approvals"/);
 });
@@ -937,7 +941,7 @@ test("정책 목록은 관리 상태와 원장 근거를 구분하고 명시적 
   ui.ACTIONS.policy({ dataset: { id: "P-1" } });
   assert.deepEqual(Array.from(detail.tabs, (tab) => tab.key), ["definition", "evidence", "mapping"]);
   assert.match(String(detail.tabs[0].body), /&lt;script&gt;/);
-  assert.match(String(detail.tabs[1].body), /집행 경로 시험[^]*미수행/);
+  assert.doesNotMatch(String(detail.tabs[1].body), /집행 경로 시험|미수행/);
   assert.match(String(detail.tabs[1].body), /관찰 모드에서도 차단 유지/);
   assert.doesNotMatch(String(detail.tabs[1].body), /독립 효과 검증|현재 집행 경로 검증/);
   assert.match(detail.actions, /policy=P-1[^]*since=2026-10-30T01%3A00%3A00.000Z/);
@@ -957,9 +961,9 @@ test("정책 조회 실패와 기록 없음은 집행 성공이나 정상 빈 �
   assert.doesNotMatch(body, /untrusted|POL-D-09|집행 중/);
 });
 
-test("조직 정책은 규칙 작성을 운영 적용으로 표시하지 않고 원본의 구현 상태·한계와 운영 대응 규칙만 보인다", async () => {
+test("조직 정책은 개발 구현 상태·한계를 보이지 않고 운영 대응 규칙만 보인다", async () => {
   const ui = build(true, { "/gw/policy/ledger": { source_state: "unavailable", policies: [{ policy_id: "MCP-CATALOG-001", name: "계약 검사" }],
-    organization: { source_state: "available", summary: { status: { 구현: 18, 부분: 60, 없음: 7, "구조적 차단": 5 } },
+    organization: { source_state: "available", summary: {},
       policies: [{ id: "POL-I-04", name: "<img src=x>", stage: "도입 검토",
       implementation: "rego+sensor", category: "pac", has_rule: true, has_test_definition: true, rule_runtime: false,
       status: "부분", limitation: "권한표 대조는 호출 때만", content: "<script>bad</script>",
@@ -968,16 +972,16 @@ test("조직 정책은 규칙 작성을 운영 적용으로 표시하지 않고 
   assert.equal(out.html.active, "organization");
   const tab = out.html.tabs.find((t) => t.key === "organization");
   assert.equal(tab.n, 1);
-  assert.match(String(tab.body), /POL-I-04[^]*&lt;img[^]*부분 구현[^]*대응 규칙 1개[^]*권한표 대조는 호출 때만/);
-  assert.match(String(tab.sub ?? tab.body), /구현 18 · 부분 구현 60 · 미구현 7 · 구조적 차단 5/);
+  assert.match(String(tab.body), /POL-I-04[^]*&lt;img[^]*대응 규칙 1개/);
+  assert.doesNotMatch(String(tab.body), /부분 구현|권한표 대조는 호출 때만|<th>한계<\/th>|<th>구현 상태<\/th>/);
   assert.doesNotMatch(String(tab.body), /판정 코드 있음/);
   let detail;
   ui.policyDrawer((title, actions, tabs) => { detail = tabs; });
   ui.ACTIONS["organization-policy"]({ dataset: { id: "POL-I-04" } });
   assert.match(String(detail[0].body), /&lt;script&gt;/);
-  assert.match(String(detail[1].body), /부분 구현[^]*권한표 대조는 호출 때만[^]*대응 규칙 1개[^]*작성·운영 미적용[^]*조직 적용 확인[^]*미확인/);
-  assert.match(String(detail[2].body), /data-act="policy" data-id="MCP-CATALOG-001"/);
-  assert.doesNotMatch(String(detail[2].body), /MISSING-001/);
+  assert.deepEqual(Array.from(detail, (d) => d.key), ["definition", "rules"]);
+  assert.match(String(detail[1].body), /data-act="policy" data-id="MCP-CATALOG-001"/);
+  assert.doesNotMatch(String(detail[1].body), /MISSING-001|권한표 대조는 호출 때만|구현 상태/);
   assert.doesNotMatch(String(tab.body), /적용 중|시험 통과/);
 });
 

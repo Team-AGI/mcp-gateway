@@ -29,14 +29,14 @@ class CatalogTests(unittest.TestCase):
             self.assertEqual(policy["content"], originals[policy["id"]]["content"])
             self.assertNotIn("applied", policy)
             self.assertNotIn("note", policy)
-        # The source review's implementation status and limitation travel with each policy; only rules the running
-        # gateway evaluates count as enforcement, and written policy/pac rules are not enforcement while OPA does not load them.
-        classes = json.loads((ROOT / "policy/source/classification.json").read_text(encoding="utf-8"))["policies"]
+        # Only rules the running gateway evaluates count as enforcement, and written policy/pac rules are not enforcement
+        # while OPA does not load them. The development review's status and limitation stay out of the console data.
         ledger = set(json.loads((ROOT / "full_stack_lab/opa/policy_ledger.json").read_text(encoding="utf-8"))["policy_ledger"])
         loaded = any("data.mcp.pol" in f.read_text(encoding="utf-8") for f in (ROOT / "full_stack_lab/opa").glob("*.rego"))
         self.assertEqual(actual["summary"]["pac_runtime_loaded"], loaded)
         for policy in actual["policies"]:
-            self.assertEqual((policy["status"], policy["limitation"]), (classes[policy["id"]]["status"], classes[policy["id"]].get("note", "")))
+            self.assertNotIn("status", policy)
+            self.assertNotIn("limitation", policy)
             self.assertLessEqual(set(policy["runtime_rule_ids"]), ledger)
             self.assertEqual(policy["rule_runtime"], loaded and policy["has_rule"])
 
