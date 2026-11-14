@@ -1378,6 +1378,25 @@ async def internal_archive_digest(client: httpx.AsyncClient, path: str, commit: 
         spool.close()
 
 
+async def keep_approved_branch(client: httpx.AsyncClient, path: str, default: str) -> None:
+    """The internal copy is the verified commit, not the upstream's work in progress: other branches are removed."""
+    for _ in range(100):
+        listed = await client.get(f"{path}/branches", params={"page": 1, "limit": 50})
+        others = [b["name"] for b in (listed.json() if listed.is_success else []) if b.get("name") != default]
+        if not others:
+            return
+        for branch in others:
+            await client.delete(f"{path}/branches/{quote(branch, safe='')}")
+
+
+async def internal_repo_description(url: str, row: dict) -> str:
+    """One upstream repository can hold several approved servers (fetch, time …): name them all."""
+    rows = await db.fetch_all(
+        "SELECT display_name FROM mcp_intake_requests WHERE internal_repo_url=%s AND status='APPROVED'", (url,))
+    names = sorted({r["display_name"] for r in rows if r.get("display_name")} | {row.get("display_name") or url.rsplit("/", 1)[-1]})
+    return f"{' · '.join(names)} · 검증 커밋 {row['commit_sha'][:12]}"
+
+
 async def publish_internal_repo(row: dict) -> tuple[str, dict]:
     """검증한 공개 GitHub 저장소를 이 기기의 Gitea `mcp` 조직으로 가져온다.
 
@@ -1420,10 +1439,12 @@ async def publish_internal_repo(row: dict) -> tuple[str, dict]:
                 raise ProvenanceMismatch(f"기록한 해시 {str(recorded)[:12]} · 사본 해시 {actual['sha256'][:12]}")
             checked = {"match": True, "source": "internal-repo-archive", "sha256": actual["sha256"],
                        "files": actual["files"], "bytes": actual["bytes"]}
+            await keep_approved_branch(client, path, info["default_branch"])
+            public = os.getenv("GITEA_PUBLIC_URL", "http://localhost:3000").rstrip("/")
             published = await client.patch(path, json={
                 "private": False, "has_issues": True, "has_pull_requests": False, "has_wiki": False,
                 "website": row["repository_url"],
-                "description": f"{row.get('display_name') or name} · 검증 커밋 {row['commit_sha'][:12]}"})
+                "description": await internal_repo_description(f"{public}/{org}/{name}", row)})
             if not published.is_success:
                 raise HTTPException(502, f"직원 읽기 권한 게시 실패 (Gitea {published.status_code}).")
     except httpx.HTTPError as exc:
