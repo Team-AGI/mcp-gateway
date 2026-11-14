@@ -24,6 +24,14 @@ from unittest.mock import AsyncMock, patch
 APP = Path(__file__).resolve().parents[1] / "gateway" / "app"
 
 
+def _high_impact():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("high_impact_unit", APP / "high_impact.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def functions(file, names, namespace):
     tree = ast.parse((APP / file).read_text(encoding="utf-8"))
     selected = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
@@ -585,7 +593,7 @@ class DispatchTests(unittest.IsolatedAsyncioTestCase):
             "datetime": datetime, "UTC": timezone.utc, "local_verdict": lambda pid, decision, msg: {"policy_id": pid, "decision": decision},
             "pac": NS(build=AsyncMock(return_value={})), "classify": NS(classify=lambda *args: None),
             "_contract": AsyncMock(return_value={}), "GATEWAY_ENVIRONMENT": "unit", "_policy": self.policy,
-            "dispatch": NS(record=self.record), "asyncio": asyncio,
+            "dispatch": NS(record=self.record), "asyncio": asyncio, "high_impact": _high_impact(),
             "output_contract": output_contract, "_guarded_result": lambda value, protocol=None, schema=None: value,
         }
         self.ns = functions("core.py", {"_call_upstream"}, ns)

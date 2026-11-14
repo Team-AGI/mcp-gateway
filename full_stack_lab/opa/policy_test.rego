@@ -1413,3 +1413,46 @@ test_intake_disabled_location_pack_does_not_bypass_contract_gate if {
     result.decision == "Block"
     result.policy_id == "MCP-CATALOG-001"
 }
+
+window_approval(document, change) := approved if {
+    a := object.union({"window": true, "verified": true, "approver_authorized": true, "approver_id": "independent-admin",
+          "user_id": document.pac.facts.identity.user_id, "single_use_reserved": true, "status": "APPROVED",
+          "request_id": "other-request", "request_digest": "other-digest",
+          "server_id": document.pac.request.server_id, "feature_id": document.pac.request.feature_id,
+          "action": document.pac.request.action,
+          "valid_from_ns": 1700000000000000000, "valid_until_ns": 1900000000000000000}, change)
+    approved := object.union(document, {"pac": object.union(document.pac, {
+        "facts": object.union(document.pac.facts, {"individual_approval": a})})})
+}
+
+test_window_approval_covers_other_requests_of_the_same_tool if {
+    approved := window_approval(residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency), {})
+    data.mcp.pac15.pac13_approved with input as approved.pac
+    result := decision with input as approved
+    result.decision == "Allow"
+}
+
+test_window_approval_is_bound_to_requester_tool_and_period if {
+    document := residency_input("nonimportant", [residency_target(["US"], ["US"])], data.residency)
+    every change in [{"user_id": "someone-else"}, {"feature_id": "other-tool"}, {"server_id": "other-server"},
+                     {"valid_until_ns": 1700000000000000000}, {"status": "REVOKED"}, {"single_use_reserved": false},
+                     {"approver_id": document.pac.facts.identity.user_id}] {
+        approved := window_approval(document, change)
+        not data.mcp.pac15.pac13_approved with input as approved.pac
+    }
+}
+
+# 11-14 기간 승인은 승인자가 본 사유만 덮는다. 새 사유는 새 승인이다.
+test_period_approval_covers_only_its_own_reasons if {
+	patch := {
+		"principal": {"role": "employee"},
+		"resource": {"id": "work-001", "data_class": "nonimportant"},
+		"tool": {"name": "write_document", "action": "w"},
+		"request": {"untrusted_markers": ["content"]},
+	}
+	other := decision with input as object.union(with_input(patch), {"approval": {"granted": false, "policies": ["P-HIGH-IMPACT-001"]}})
+	other.decision == "Approval"
+	other.policy_id == "P-UNTRUSTED-CONTENT-001"
+	same := decision with input as object.union(with_input(patch), {"approval": {"granted": false, "policies": ["P-UNTRUSTED-CONTENT-001"]}})
+	same.policy_id != "P-UNTRUSTED-CONTENT-001"
+}

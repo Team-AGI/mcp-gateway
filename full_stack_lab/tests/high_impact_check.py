@@ -132,7 +132,8 @@ class ApprovalChecks(unittest.IsolatedAsyncioTestCase):
         self.executed = AsyncMock(return_value={"upstream_executed": True, "decision_id": 7})
         self.ns = {"db": self.db, "review": self.review, "high_impact": impact, "canonical_hash": digest,
                    "datetime": datetime, "UTC": UTC, "execute_call": self.executed,
-                   "registry": SimpleNamespace(server=lambda _: None)}
+                   "registry": SimpleNamespace(server=lambda _: None),
+                   "APPROVAL_WINDOWS": (0, 10, 30), "APPROVAL_WINDOW_DEFAULT": 30, "APPROVAL_ONE_USE_MINUTES": 10}
         self.mod = production("core.py", {"approve_request", "reject_request", "revoke_approval", "approval_evidence", "_require_explanation"}, self.ns)
         self.hash = digest(self.row["explanation"])
 
@@ -141,8 +142,13 @@ class ApprovalChecks(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(ValueError):
                 await self.mod.approve_request("case", "reviewer", reason, evidence)
         self.executed.assert_not_awaited()
+        self.connection.execute.return_value.fetchone.return_value = {**self.row, "valid_until": NOW + timedelta(minutes=30)}
         result = await self.mod.approve_request("case", "reviewer", "scope_confirmed", self.hash)
-        self.assertTrue(result["upstream_executed"])
+        # 11-14: approval opens a window for the requester's own retry; the gateway does not run the stored call.
+        self.assertEqual((result["status"], result["window_minutes"]), ("APPROVED", 30))
+        self.executed.assert_not_awaited()
+        with self.assertRaises(ValueError):
+            await self.mod.approve_request("case", "reviewer", "scope_confirmed", self.hash, 45)
         event = self.review.record_event.await_args
         self.assertEqual(event.args[:2], ("call-approve", "approved"))
         self.assertEqual(event.kwargs["scope"]["explanation"], self.row["explanation"])

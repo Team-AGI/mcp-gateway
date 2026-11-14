@@ -228,8 +228,8 @@ def _render(outcome: dict, protocol_version: str | None = None) -> types.CallToo
                                     structuredContent=structured, isError=bool(result.get("is_error")),
                                     _meta={"gateway": gateway})
     if decision == "Approval":
-        text = (f"{header}\n관리자 승인이 필요합니다. 승인 ID {outcome.get('approval_id')} "
-                "(Console → 승인 대기). 승인되면 Gateway가 이 요청을 그대로 실행합니다.")
+        text = (f"{header}\n관리자 승인이 필요합니다. 승인 요청 ID {outcome.get('approval_id')}. 아직 실행하지 않았습니다. "
+                "승인 완료를 확인한 뒤 같은 작업을 다시 요청하세요. 승인된 범위·기간 안에서 현재 정책을 다시 검사한 뒤 실행합니다.")
     elif gateway["response_withheld"]:
         text = (f"{header}\n도구는 공급자에서 이미 실행됐고 결과만 반환하지 않았습니다. "
                 "쓰기·전송 효과는 이 보류로 되돌려지지 않습니다.")

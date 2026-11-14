@@ -289,17 +289,25 @@ async def drifted_contract_blocks() -> str:
 
 async def approval_runs_once() -> str:
     await operating("desktop")
-    pending = await call("employee", "desktop__start_process", {"command": "echo acceptance-approval", "timeout_ms": 5000})
+    args = {"command": "echo acceptance-approval", "timeout_ms": 5000}
+    pending = await call("employee", "desktop__start_process", args)
     expect(pending.get("decision") == "Approval" and pending.get("approval_id"),
            f"플랫폼개발팀 start_process: {pending.get('decision')} {pending.get('policy_id')}")
-    executed = await approve_request(pending["approval_id"], PRINCIPAL["admin"])
-    expect(executed.get("upstream_executed"), f"승인 후 실행되지 않음: {executed.get('decision')} {executed.get('policy_id')}")
+    granted = await approve_request(pending["approval_id"], PRINCIPAL["admin"], window_minutes=0)
+    expect(granted.get("status") == "APPROVED" and not granted.get("upstream_executed"),
+           f"승인이 대신 실행했거나 열리지 않음: {granted}")
     try:
         await approve_request(pending["approval_id"], PRINCIPAL["admin"])
-        raise AssertionError("같은 승인이 두 번 실행됨")
+        raise AssertionError("같은 요청이 두 번 승인됨")
     except ValueError:
         pass
-    return f"{pending['policy_id']} → 승인 1회 실행, 재승인 거부"
+    # The requester's own retry runs under the approval; a one-use approval is spent by it.
+    retried = await call("employee", "desktop__start_process", args)
+    expect(retried.get("upstream_executed") and retried.get("approval_id") == pending["approval_id"],
+           f"승인 뒤 다시 호출이 실행되지 않음: {retried.get('decision')} {retried.get('policy_id')}")
+    again = await call("employee", "desktop__start_process", {**args, "command": "echo acceptance-approval-2"})
+    expect(again.get("decision") == "Approval", f"1회 승인이 두 번 쓰임: {again.get('decision')} {again.get('policy_id')}")
+    return f"{pending['policy_id']} → 승인 뒤 요청자 재호출 1회 실행, 다음 호출은 다시 승인 대기"
 
 
 async def self_approval_refused() -> str:
