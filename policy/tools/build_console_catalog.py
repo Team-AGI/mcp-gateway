@@ -7,6 +7,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT.parent / "full_stack_lab/gateway/app/organization_policies.json"
+RUNTIME = ROOT.parent / "full_stack_lab/opa"
+STATUS = ("구현", "부분", "없음", "구조적 차단")
+
+
+def runtime_rules():
+    """Rules the running gateway evaluates (its policy ledger), and whether OPA loads the policy/pac package at all."""
+    ledger = set(json.loads((RUNTIME / "policy_ledger.json").read_text(encoding="utf-8"))["policy_ledger"])
+    loaded = any("data.mcp.pol" in path.read_text(encoding="utf-8") for path in RUNTIME.glob("*.rego"))
+    return ledger, loaded
+
+
+def candidates_of(classification):
+    return sorted(set(re.findall(r"(?:MCP|PAC|P)-[A-Z0-9]+(?:-[A-Z0-9]+)*", classification.get("evidence", ""))))
 
 
 def build():
@@ -23,13 +36,16 @@ def build():
             tests.update(f"POL-{a.upper()}-{n}" for a, n in re.findall(r"test_pol_([a-z])_(\d{2})_(?:pass|block)_", text))
         else:
             rules.update(a or b for a, b in re.findall(r'lib\.finding\("(POL-[A-Z]-\d{2})"|"policy_id": "(POL-[A-Z]-\d{2})"', text))
+    ledger, pac_loaded = runtime_rules()
     policies = []
     for pid, source in sheet.items():
         if not re.fullmatch(r"POL-[A-Z]-\d{2}", pid):
             raise ValueError("Invalid policy identifier")
         classification = classes[pid]
         rule = source.get("rule") or {}
-        candidates = sorted(set(re.findall(r"(?:MCP|PAC|P)-[A-Z0-9]+(?:-[A-Z0-9]+)*", classification.get("evidence", ""))))
+        candidates = candidates_of(classification)
+        if classification.get("status") not in STATUS:
+            raise ValueError(f"{pid}: unknown implementation status")
         policies.append({"id": pid, "name": source["target"], "stage": source["stage"],
                          "content": source["content"], "condition": source["condition"],
                          "required_evidence": source.get("evidence", ""),
@@ -37,8 +53,15 @@ def build():
                          "block_condition": rule.get("block_condition", ""),
                          "category": classification["category"], "implementation": classification["enforced_by"],
                          "has_rule": pid in rules, "has_test_definition": pid in tests,
-                         "candidate_rule_ids": candidates})
+                         "candidate_rule_ids": candidates,
+                         # What the source review found, not what a rule's existence suggests.
+                         "status": classification["status"], "limitation": classification.get("note", ""),
+                         "rule_runtime": pac_loaded and pid in rules,
+                         "runtime_rule_ids": [c for c in candidates if c in ledger]})
+    counts = {s: sum(p["status"] == s for p in policies) for s in STATUS}
     return {"schema": 1, "source_sha256": hashlib.sha256(sheet_bytes).hexdigest(),
+            "summary": {"status": counts, "pac_runtime_loaded": pac_loaded,
+                        "with_runtime_rule": sum(bool(p["runtime_rule_ids"]) for p in policies)},
             "classification_sha256": hashlib.sha256(classification_bytes).hexdigest(), "policies": policies}
 
 

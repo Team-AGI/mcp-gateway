@@ -957,21 +957,25 @@ test("정책 조회 실패와 기록 없음은 집행 성공이나 정상 빈 �
   assert.doesNotMatch(body, /untrusted|POL-D-09|집행 중/);
 });
 
-test("조직 정책은 코드 존재를 적용 성공으로 표시하지 않으며 규칙 후보만 연결한다", async () => {
+test("조직 정책은 규칙 작성을 운영 적용으로 표시하지 않고 원본의 구현 상태·한계와 운영 대응 규칙만 보인다", async () => {
   const ui = build(true, { "/gw/policy/ledger": { source_state: "unavailable", policies: [{ policy_id: "MCP-CATALOG-001", name: "계약 검사" }],
-    organization: { source_state: "available", policies: [{ id: "POL-I-04", name: "<img src=x>", stage: "도입 검토",
-      implementation: "rego+sensor", category: "pac", has_rule: true, has_test_definition: true,
-      content: "<script>bad</script>", candidate_rule_ids: ["MCP-CATALOG-001", "MISSING-001"] }] } } });
+    organization: { source_state: "available", summary: { status: { 구현: 18, 부분: 60, 없음: 7, "구조적 차단": 5 } },
+      policies: [{ id: "POL-I-04", name: "<img src=x>", stage: "도입 검토",
+      implementation: "rego+sensor", category: "pac", has_rule: true, has_test_definition: true, rule_runtime: false,
+      status: "부분", limitation: "권한표 대조는 호출 때만", content: "<script>bad</script>",
+      candidate_rule_ids: ["MCP-CATALOG-001", "MISSING-001"], runtime_rule_ids: ["MCP-CATALOG-001"] }] } } });
   const out = await ui.ROUTES.policy("", "organization");
   assert.equal(out.html.active, "organization");
   const tab = out.html.tabs.find((t) => t.key === "organization");
   assert.equal(tab.n, 1);
-  assert.match(String(tab.body), /POL-I-04[^]*&lt;img[^]*판정 코드 있음[^]*미확인/);
+  assert.match(String(tab.body), /POL-I-04[^]*&lt;img[^]*부분 구현[^]*대응 규칙 1개[^]*권한표 대조는 호출 때만/);
+  assert.match(String(tab.sub ?? tab.body), /구현 18 · 부분 구현 60 · 미구현 7 · 구조적 차단 5/);
+  assert.doesNotMatch(String(tab.body), /판정 코드 있음/);
   let detail;
   ui.policyDrawer((title, actions, tabs) => { detail = tabs; });
   ui.ACTIONS["organization-policy"]({ dataset: { id: "POL-I-04" } });
   assert.match(String(detail[0].body), /&lt;script&gt;/);
-  assert.match(String(detail[1].body), /시험 정의 있음[^]*시험 실행 확인[^]*미확인[^]*조직 적용 확인[^]*미확인/);
+  assert.match(String(detail[1].body), /부분 구현[^]*권한표 대조는 호출 때만[^]*대응 규칙 1개[^]*작성·운영 미적용[^]*조직 적용 확인[^]*미확인/);
   assert.match(String(detail[2].body), /data-act="policy" data-id="MCP-CATALOG-001"/);
   assert.doesNotMatch(String(detail[2].body), /MISSING-001/);
   assert.doesNotMatch(String(tab.body), /적용 중|시험 통과/);

@@ -68,6 +68,9 @@ def cell(text):
 
 
 def render(sheet, policies, decisions, tests):
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from build_console_catalog import candidates_of, runtime_rules
+    ledger, pac_loaded = runtime_rules()
     rows = []
     for pol in policies:  # 시트 순서(도입→등록→실행→관리→폐기)
         p = policies[pol]
@@ -80,8 +83,10 @@ def render(sheet, policies, decisions, tests):
         else:
             state = "Rego 대상 아님"
         note = cell(p.get("note", "")) if p["category"] in {"solution", "excluded"} else ""
+        runtime = ", ".join(c for c in candidates_of(p) if c in ledger) or "—"
         rows.append(f"| {pol} | {p.get('stage', '')} | {p.get('priority', '')} | {cell(p.get('target', ''))} | "
-                    f"{CATEGORY[p['category']]} | {ENFORCED[p['enforced_by']]} | {where} | {t['pass']}/{t['block']} | {t['adv']} | {state} | {note} |")
+                    f"{CATEGORY[p['category']]} | {ENFORCED[p['enforced_by']]} | {where} | {t['pass']}/{t['block']} | {t['adv']} | {state} | "
+                    f"{p.get('status', '')} | {runtime} | {note} |")
     per_cat = defaultdict(int)
     for p in policies.values():
         per_cat[CATEGORY[p["category"]]] += 1
@@ -89,6 +94,11 @@ def render(sheet, policies, decisions, tests):
     named = sum(t["pass"] + t["block"] for t in tests.values())
     adversarial = sum(t["adv"] for t in tests.values())
     summary = " · ".join(f"{k} {per_cat[k]}" for k in CATEGORY.values())
+    per_status = defaultdict(int)
+    for p in policies.values():
+        per_status[p.get("status", "")] += 1
+    status_line = " · ".join(f"{k} {per_status[k]}" for k in ("구현", "부분", "없음", "구조적 차단"))
+    with_runtime = sum(1 for p in policies.values() if any(c in ledger for c in candidates_of(p)))
     return "\n".join([
         "# 정책 추적표",
         "",
@@ -99,10 +109,17 @@ def render(sheet, policies, decisions, tests):
         "",
         "- 「판정 위치」는 그 정책의 결과를 내는 줄(findings·violations)이다. 정책 하나가 여러 줄·여러 패키지에 걸칠 수 있다.",
         "- 「시험」은 통과/차단 시험 수, 「반례」는 규칙 작성자의 시험을 보지 않고 시트만으로 쓴 시험 수다.",
-        "- 이 표는 코드·시험의 연결이다. 게이트웨이 판정 경로 연결과 실기기 집행은 따로 확인한다(README 「게이트웨이 연결」).",
+        f"구현 상태(원본 검토): {status_line}. 운영 게이트웨이가 평가하는 대응 규칙이 있는 정책 {with_runtime}개.",
         "",
-        "| 정책 | 단계 | 우선순위 | 통제 대상 | 분류 | 판정 | 판정 위치 | 시험 | 반례 | 상태 | 사유(솔루션·제외) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        f"**운영 연결:** 이 디렉터리의 Rego 패키지(`mcp.pol.*`)는 운영 OPA가 {'불러온다' if pac_loaded else '불러오지 않는다'}. "
+        "운영에서 실제로 판정하는 것은 「운영 대응 규칙」 열의 게이트웨이 규칙(`full_stack_lab/opa`·게이트웨이 코드)이며, "
+        "그 규칙이 정책 요구를 어디까지 채우는지는 「구현 상태」(구현·부분·없음·구조적 차단)가 말한다.",
+        "",
+        "- 이 표는 코드·시험의 연결이다. 게이트웨이 판정 경로 연결과 실기기 집행은 따로 확인한다(README 「게이트웨이 연결」).",
+        "- 외부 AI 게이트웨이 애드온 경로는 판정만 한다. 전송 직전 재검사·중복 전송 차단·응답 검사·관리자 승인은 MINT 게이트웨이를 거쳐 전송하는 경로에만 적용된다.",
+        "",
+        "| 정책 | 단계 | 우선순위 | 통제 대상 | 분류 | 판정 | 판정 위치 | 시험 | 반례 | 상태 | 구현 상태 | 운영 대응 규칙 | 사유(솔루션·제외) |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         *rows,
         "",
     ])
