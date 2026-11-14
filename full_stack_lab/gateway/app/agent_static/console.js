@@ -4,6 +4,7 @@ import { mergeRows, harnessLabel, DECISIONS,
   msText, pctText, LATENCY_STAGE, timingRows, privacyText,
   originLabel, denialClass, provenanceView, countView, pager, denialCount } from "./console-state.mjs";
 import * as charts from "./charts.mjs";
+import { inboxRoute, inboxActions, loadInbox, alertCallsHref } from "./inbox.mjs";
 
 const TOKEN_KEY = "mcp-console-token";
 const THEME_KEY = "mcp-console-theme";
@@ -3828,6 +3829,12 @@ const FORMS = {
     } finally { form.dataset.submitting = "false"; }
   },
 };
+
+const inboxContext = () => ({ html, raw, chip, kv, when, ago, short, empty, panel, head, kpiStrip, chartBox, json, entityRef, charts, openDrawer,
+  api, gw, ACTION, DATA_CLASS, INTAKE_STATUS, MANAGED_STATE, ALERT_KIND, decisionChip, policyLabel, impactExplanation, alertTarget, alertDetail,
+  alertGroups, alertsSeen, markAlertsSeen, approvalHistory, setApprovalLists, setLedger: (rows) => { policyLedger = rows; }, reload, refreshBadges });
+ROUTES.inbox = (arg, tab, query) => inboxRoute(inboxContext(), query);
+Object.assign(ACTIONS, inboxActions(inboxContext()));
 
 document.addEventListener("click", (event) => {
   for (const open of document.querySelectorAll("details.row-menu[open]")) {
