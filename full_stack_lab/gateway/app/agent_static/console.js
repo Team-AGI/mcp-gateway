@@ -2521,30 +2521,37 @@ ROUTES.termination = async (caseId, tab, query = new URLSearchParams()) => {
   const { cases, summary } = result;
   for (const r of relationships) r.actual_grade = cases.find((c) => String(c.id) === String(r.latest_case))?.grade;
   const caseTotal = result.total ?? cases.length, totalPages = Math.max(1, Math.ceil(caseTotal / (result.page_size || 50)));
-  const caseHref = (p) => `#/termination?${new URLSearchParams({ t: "cases", ...(attention ? { attention } : {}), page: p })}`;
+  const caseHref = (p) => `#/termination?${new URLSearchParams({ ...(attention ? { attention } : {}), page: p })}`;
   termRelationships = relationships;
+  const card = terminationCards(summary), stages = stageCounts(cases, PROCEDURE), grades = gradeCounts(cases);
+  const expected = (c) => relationships.find((r) => r.id === c.relationship_id)?.readiness?.best_attainable_grade;
   return {
     html: page({
-      head: head("종료 및 폐기"),
-      kpis: kpiStrip([["진행 중", summary.open_cases], ["종결 대기", summary.awaiting_close, "approval"],
-        ["종료 미완료", summary.unresolved_grades, summary.unresolved_grades ? "alert" : ""],
-        [`기한 ${summary.sla_days}일 초과`, summary.overdue, summary.overdue ? "block" : ""],
-        ["폐기 후 남은 설정", summary.retired_residue, summary.retired_residue ? "alert" : ""]]),
-      active: tab || "relationships",
+      head: head("종료·폐기"),
+      kpis: html`${kpiStrip([["진행 중", card.open, "", "#/termination"], ["종결 대기", card.waiting, "approval"],
+        ["종료 미완료", card.unresolved, card.unresolved ? "alert" : ""],
+        [`기한 ${summary.sla_days}일 초과`, card.overdue, card.overdue ? "block" : "", "#/termination?attention=overdue"],
+        ["폐기 후 남은 설정", card.residue, card.residue ? "alert" : "", "#/connections?t=shadow"]])}
+        ${chartRow(["단계별 처리", "c-term-stage", "단계별 종료 처리 건수"], ["판정 등급", "c-term-grade", "판정 등급별 건수"])}`,
+      active: "cases",
       tabs: [
-        { key: "relationships", label: "종료 대상", n: relationships.length, body: html`${panel("종료 대상", relationships.length ? html`<table class="data"><thead><tr><th>MCP 서버</th><th>운영</th><th class="num">이용자</th><th class="num">호출</th><th class="num">회수 대상</th><th>예상 결과</th><th>실제 결과</th><th>근거</th><th></th></tr></thead><tbody>
-            ${relationships.map(relationshipRow)}</tbody></table>` : empty("이용 관계 없음"), { flush: true })}` },
-        { key: "cases", label: "종료 처리", n: caseTotal, body: html`${panel(attention === "required" ? "종료 조치 필요" : attention === "overdue" ? "종료 기한 초과" : "종료 처리", html`<table class="data"><thead><tr><th>MCP 서버</th><th>상태</th><th>예상 결과</th><th>실제 결과</th><th>근거</th><th class="num">회수 대상</th><th class="num">미회수</th><th class="num">증거</th><th>시작</th></tr></thead><tbody>
-            ${cases.map((c) => html`<tr class="clickable" tabindex="0" data-act="open-case" data-id="${c.id}">
-              <td><b>${c.display_name}</b><span class="sub mono">${c.relationship_id || c.server_id}</span></td>
+        { key: "cases", label: "종료 처리", n: caseTotal, body: panel(attention === "required" ? "종료 조치 필요" : attention === "overdue" ? "종료 기한 초과" : "종료 처리", html`<table class="data"><thead><tr><th>MCP 서버</th><th>상태</th><th>단계</th><th class="num">남은 회수</th><th>기한</th><th>예상 결과</th><th>실제 결과</th></tr></thead><tbody>
+            ${cases.map((c) => { const due = caseDue(c, summary.sla_days); return html`<tr class="clickable" tabindex="0" data-act="open-case" data-id="${c.id}">
+              <td><b>${c.display_name}</b></td>
               <td>${chip(c.status === "CLOSED" ? "outline" : "approval", CASE_STATUS[c.status] || c.status)}${c.overdue ? chip("block", "기한 초과") : ""}</td>
-              <td>${gradeChip(relationships.find((r) => r.id === c.relationship_id)?.readiness?.best_attainable_grade)}</td><td>${gradeChip(c.grade)}</td><td><a href="#/termination/${c.id}?t=evidence">근거</a></td><td class="num">${c.targets}</td><td class="num">${c.outstanding}</td><td class="num">${c.evidence}</td>
-              <td class="small nowrap">${when(c.opened_at)}</td></tr>`)}
+              <td><span class="rail" role="img" aria-label="${PROCEDURE[Math.min(caseDone(c), PROCEDURE.length - 1)]}" title="${PROCEDURE[Math.min(caseDone(c), PROCEDURE.length - 1)]}">${PROCEDURE.map((_, i) => html`<i class="${i < caseDone(c) ? "done" : i === caseDone(c) ? "now" : ""}"></i>`)}</span></td>
+              <td class="num ${c.outstanding ? "bad-text" : ""}">${c.outstanding}</td>
+              <td class="small nowrap ${c.overdue ? "bad-text" : ""}">${due ? when(due) : "—"}</td>
+              <td>${gradeChip(expected(c))}</td><td>${gradeChip(c.grade)}</td></tr>`; })}
             </tbody></table>${cases.length ? "" : empty("종료 처리 없음")}`, { flush: true,
-              tools: html`<div class="row-actions"><a class="btn sm ${!attention ? "primary" : ""}" href="#/termination?t=cases">전체</a><a class="btn sm ${attention === "required" ? "primary" : ""}" href="#/termination?t=cases&attention=required">조치 필요</a><a class="btn sm ${attention === "overdue" ? "primary" : ""}" href="#/termination?t=cases&attention=overdue">기한 초과</a></div>`,
-              end: totalPages > 1 ? html`<div class="row-actions">${casePage > 1 ? html`<a class="btn sm" href="${caseHref(casePage - 1)}">이전</a>` : ""}<span>${casePage} / ${totalPages}</span>${casePage < totalPages ? html`<a class="btn sm" href="${caseHref(casePage + 1)}">다음</a>` : ""}</div>` : "" })}` },
+              tools: html`<div class="row-actions"><a class="btn sm ${!attention ? "primary" : ""}" href="#/termination">전체</a><a class="btn sm ${attention === "required" ? "primary" : ""}" href="#/termination?attention=required">조치 필요</a><a class="btn sm ${attention === "overdue" ? "primary" : ""}" href="#/termination?attention=overdue">기한 초과</a></div>`,
+              end: totalPages > 1 ? html`<div class="row-actions">${casePage > 1 ? html`<a class="btn sm" href="${caseHref(casePage - 1)}">이전</a>` : ""}<span>${casePage} / ${totalPages}</span>${casePage < totalPages ? html`<a class="btn sm" href="${caseHref(casePage + 1)}">다음</a>` : ""}</div>` : "" }) },
       ],
     }),
+    charts: {
+      "c-term-stage": () => charts.bars(stages.map((s) => ({ name: s.name, value: s.value }))),
+      "c-term-grade": () => charts.donut(grades.map((g) => ({ name: GRADE[g.key], value: g.value, color: charts.color({ T1: "Allow", T2: "Alert", T3: "Block" }[g.key]) }))),
+    },
   };
 };
 

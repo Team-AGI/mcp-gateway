@@ -269,18 +269,20 @@ test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기
   assert.match(String(ui.node("#drawer-body").innerHTML), /d-tab-source[^>]*aria-selected="true"/);
 });
 
-test("종료 목록의 예상·실제 결과와 케이스 근거 링크는 별도 열이다", async () => {
+test("종료 목록은 탭 없이 단계·남은 회수·기한과 예상·실제 결과를 한 줄에 둔다", async () => {
   const ui = build(true, {
     "/gw/termination/relationships": { relationships: [{ id: "rel1", server_id: "docs", display_name: "문서 서버", status: "ACTIVE", lifecycle: "OPERATING", latest_case: "case1", readiness: { best_attainable_grade: "T1" } }] },
     "/gw/termination/cases": { cases: [{ id: "case1", relationship_id: "rel1", display_name: "문서 서버", grade: "T2", status: "ASSESSED", outstanding: 2, opened_at: "2026-11-01T00:00:00Z" }, { id: "case2", display_name: "닫힌 서버", status: "CLOSED", grade: "T1", outstanding: 0 }], summary: { sla_days: 14, open_cases: 1 } },
   });
   const out = await ui.ROUTES.termination();
-  for (const tab of out.html.tabs) {
-    const body = String(tab.body);
-    assert.match(body, /<th>예상 결과<\/th><th>실제 결과<\/th><th>근거<\/th>/);
-    assert.match(body, /완전 종료/); assert.match(body, /부분 종료/);
-    assert.match(body, /href="#\/termination\/case1\?t=evidence"/);
-  }
+  assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), ["cases"]);
+  const body = String(out.html.tabs[0].body);
+  assert.match(body, /<th>단계<\/th><th class="num">남은 회수<\/th><th>기한<\/th><th>예상 결과<\/th><th>실제 결과<\/th>/);
+  assert.match(body, /완전 종료/); assert.match(body, /부분 종료/);
+  assert.equal((body.match(/<i class="done"><\/i>/g) || []).length, 6 + 7);
+  assert.match(body, /data-act="open-case" data-id="case1"/);
+  assert.match(String(out.html.kpis), /진행 중[^]*종결 대기[^]*종료 미완료[^]*기한 14일 초과[^]*폐기 후 남은 설정/);
+  assert.deepEqual(Object.keys(out.charts), ["c-term-stage", "c-term-grade"]);
 });
 
 test("브라우저 배포 소스는 개발 주석을 포함하지 않고 만료창은 라벨과 값이다", () => {
