@@ -248,14 +248,13 @@ test("엔드포인트 표는 검색·상태 조건으로 좁히고 한 표에 �
   ] };
   const out = await ui.ROUTES.endpoints("", "devices", q);
   const body = String(out.html.tabs.find((tab) => tab.key === "devices").body);
-  assert.match(body, /<th>사용자<\/th><th>호스트<\/th><th>상태<\/th><th>마지막 보고<\/th>/);
+  assert.match(body, /<th>사용자<\/th><th>호스트<\/th><th>등록 상태<\/th><th>최근 보고<\/th>/);
   assert.match(body, /직원 이름/); assert.match(body, /host-one/); assert.match(body, /활성화 대기/); assert.match(body, /미충족 설정 보호/);
   assert.match(body, /data-act="endpoint-device" data-id="ep1"/); assert.match(body, /data-act="device-activate"/);
   assert.match(body, /name="q"[^>]*value="kim"/); assert.match(body, /value="pending" selected/); assert.match(body, /name="silent" value="1"\s+checked/);
   assert.doesNotMatch(body, /통제 점검<\/h2>|엔드포인트 MCP 설정/);
-  assert.match(String(out.html.kpis), /등록 PC[^]*최근 15분 보고[^]*15분 이상 미보고[^]*격리[^]*활성화 대기/);
-  assert.match(String(out.html.kpis), /c-endpoint-state[^]*c-endpoint-age/);
-  assert.deepEqual(Object.keys(out.charts), ["c-endpoint-state", "c-endpoint-age"]);
+  assert.match(String(out.html.kpis), /등록 PC[^]*최근 15분 보고[^]*보고 지연[^]*24시간 이상 미보고[^]*격리[^]*활성화 대기[^]*보고 확인 필요/);
+  assert.deepEqual(Object.keys(out.charts), []);
 });
 
 test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기록 상세를 함께 연다", async () => {
@@ -280,11 +279,11 @@ test("종료 목록은 탭 없이 단계·남은 회수·기한과 예상·실�
   const out = await ui.ROUTES.termination();
   assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), ["cases"]);
   const body = String(out.html.tabs[0].body);
-  assert.match(body, /<th>단계<\/th><th class="num">남은 회수<\/th><th>기한<\/th><th>예상 결과<\/th><th>실제 결과<\/th>/);
+  assert.match(body, /<th>단계<\/th><th class="num">미회수 대상<\/th><th>기한<\/th><th>예상 결과<\/th><th>실제 결과<\/th>/);
   assert.match(body, /완전 종료/); assert.match(body, /부분 종료/);
   assert.equal((body.match(/<i class="done"><\/i>/g) || []).length, 6 + 7);
   assert.match(body, /data-act="open-case" data-id="case1"/);
-  assert.match(String(out.html.kpis), /진행 중[^]*종결 대기[^]*종료 미완료[^]*기한 14일 초과[^]*폐기 후 남은 설정/);
+  assert.match(String(out.html.kpis), /진행 중[^]*종결 대기[^]*회수 미완료[^]*기한 초과[^]*폐기 후 잔존 설정/);
   assert.deepEqual(Object.keys(out.charts), ["c-term-stage", "c-term-grade"]);
 });
 
@@ -490,7 +489,7 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
   const people = await ui.ROUTES.endpoints("", "devices");
   const devices = people.html.tabs.find((item) => item.key === "devices");
   assert.deepEqual(Array.from(people.html.tabs, (item) => item.key), ["devices", "managed"]);
-  assert.match(String(devices.body), /새 PC 활성화/);
+  assert.match(String(people.html.head), /새 PC 활성화/);
   const links = await ui.ROUTES.connections("", "shadow", new URLSearchParams());
   assert.deepEqual(Array.from(links.html.tabs, (item) => item.key), ["items", "shadow", "vendor"]);
   ui.responses["/api/supply-chain/impact"] = { counts: { affected: 1, unaffected: 0, unknown: 0, no_data: 0 }, servers: [{ server_id: "docs", server_name: "Docs", judgement: "영향 있음", evidence: [{ version: "1.2.0" }] }] };
@@ -515,7 +514,7 @@ test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승
   assert.deepEqual(Array.from(detail.tabs, (t) => t.label), ["개요", "도구·범위", "사용 대상", "호출 추이", "종료·폐기"]);
   assert.match(String(detail.tabs[0].body), /마지막 확인/);
   assert.doesNotMatch(String(result.html.head), /catalog-refresh|registry-export|connector-policy/);
-  assert.match(String(result.html.tabs[0].body), /catalog-refresh[^]*도구 정의 다시 확인[^]*data-registry-export[^]*도입 승인 등록부 내보내기[^]*value="csv"[^]*value="json"/);
+  assert.match(String(result.html.tabs[0].body), /catalog-refresh[^]*정의 변경 확인[^]*data-registry-export[^]*내보내기[^]*value="csv"[^]*value="json"/);
   assert.doesNotMatch(String(result.html.tabs[0].body), /connector-policy/);
   const links = await ui.ROUTES.connections("", "vendor", new URLSearchParams());
   assert.match(String(links.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
@@ -581,7 +580,7 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.match(String(overview.html.tabs[0].body), /data-href="#\/servers\?t=items&amp;state=bypass_possible"/);
   const result = await ui.ROUTES.connections("", "items", new URLSearchParams());
   const body = String(result.html.tabs.find((t) => t.key === "items").body);
-  assert.match(String(result.html.kpis), /미적용 PC[^]*게이트웨이 통제[^]*엔드포인트 통제[^]*벤더 통제[^]*관찰 및 미등록[^]*조직 통제 의존/);
+  assert.match(String(result.html.kpis), /미승인 연결[^]*미등록 MCP 발견 PC[^]*게이트웨이 통제[^]*엔드포인트 통제[^]*벤더 통제[^]*통제 미검증/);
   assert.match(body, /연결 유형별 통제 현황[^]*연결 항목 수[^]*연결별 통제 상태/);
   assert.match(body, /id="c-connections-matrix"/);
   let captured;
@@ -1127,7 +1126,7 @@ test("정책 화면은 제목·단계 묶음·집행 방식·상태·최근 판�
   assert.match(body, /data-id="POL-R-16"[^]*?<span class="chip outline">제품 기능<\/span>/);
   assert.match(body, /aria-label="차단 3 · 경보 1"|<title>[^<]*차단 3[^<]*<\/title>/);
   assert.match(body, /<span class="num">10<\/span>/);
-  assert.match(body, /최근 24시간/);
+  assert.match(body, /규칙 판정 24시간/);
   assert.doesNotMatch(body, /구현 상태|<th>한계<\/th>|부분 구현|미구현|권한표 대조/);
   assert.ok(body.indexOf('data-id="POL-E-19"') < body.indexOf('data-id="POL-E-17"'));
   assert.ok(!body.includes("<img"));
@@ -1138,10 +1137,12 @@ test("정책 화면은 제목·단계 묶음·집행 방식·상태·최근 판�
 
 test("정책 카드는 집행 방식별 수와 기간 내 차단·경보·승인 요청 건수를 전기간과 비교해 보이고 수동 점검 카드는 필터로 이동한다", async () => {
   const body = String((await policyScreen().ROUTES.policy("", "")).html.tabs[0].body);
-  assert.match(body, /href="#\/policy\?mode=auto"><div class="label">자동 집행 정책<\/div><div class="value">2<small class="of">\/ 4<\/small>/);
-  assert.match(body, /href="#\/policy\?mode=feature"><div class="label">제품 기능으로 충족<\/div><div class="value">1<small class="of">\/ 4<\/small>/);
-  assert.match(body, /class="kpi alert" href="#\/policy\?mode=manual"><div class="label">수동 점검 필요<\/div><div class="value">1<small class="of">\/ 4<\/small>/);
-  assert.match(body, /<div class="label">차단·경보·승인 요청<\/div><div class="value">4<\/div><div class="foot"><span class="delta">이전 2<\/span>/);
+  assert.match(body, /href="#\/policy\?mode=auto"><div class="label">자동 집행 방식<\/div><div class="value">2<small class="of">\/ 4<\/small><\/div><div class="foot">켜짐 \d+ · 꺼짐 \d+/);
+  assert.match(body, /href="#\/policy\?mode=feature"><div class="label">제품 기능 연결<\/div><div class="value">1<small class="of">\/ 4<\/small>/);
+  assert.match(body, /href="#\/policy\?mode=manual"><div class="label">수동 점검 방식<\/div><div class="value">1<small class="of">\/ 4<\/small>/);
+  assert.match(body, /href="#\/policy\?mode=structural"><div class="label">구조적 차단·범위 밖<\/div>/);
+  assert.match(body, /href="#\/policy\?state=off"[^>]*><div class="label">현재 꺼짐<\/div>/);
+  assert.match(body, /<div class="label">규칙 판정<\/div><div class="value">4<\/div><div class="foot"><span class="base">직전 24시간 2건<\/span>/);
 });
 
 test("정책 필터는 주소의 집행 방식·단계·판정 여부를 표에 반영하고 일치하지 않는 묶음은 숨긴다", async () => {
@@ -1149,7 +1150,7 @@ test("정책 필터는 주소의 집행 방식·단계·판정 여부를 표에 
   const manual = String((await policyScreen().ROUTES.policy("", "", new URLSearchParams("mode=manual"))).html.tabs[0].body);
   assert.ok(!hidden(manual, "POL-E-19"));
   for (const id of ["POL-E-17", "POL-I-09", "POL-R-16"]) assert.ok(hidden(manual, id), id);
-  assert.match(manual, /<tbody data-group="I-D" hidden>/);
+  assert.match(manual, /<tbody data-group="I-D" data-collapsed="false" hidden>/);
   assert.match(manual, /<option value="manual" selected>수동 점검<\/option>/);
   const has = String((await policyScreen().ROUTES.policy("", "", new URLSearchParams("has=1&q=반복"))).html.tabs[0].body);
   assert.ok(!hidden(has, "POL-E-17"));
@@ -1208,7 +1209,7 @@ test("정책 조회 실패와 기록 없음은 집행 성공이나 정상 빈 �
   const noActivity = policyScreen({ "/gw/policy/activity?hours=24": new Error("실패") });
   const rows = String((await noActivity.ROUTES.policy("", "")).html.tabs[0].body);
   assert.doesNotMatch(rows, /<span class="num">/);
-  assert.match(rows, /<div class="label">차단·경보·승인 요청<\/div><div class="value">—<\/div>/);
+  assert.match(rows, /<div class="label">규칙 판정<\/div><div class="value">—<\/div>/);
 });
 
 test("정책 운영 규칙 탭은 규칙 서랍 연결과 정책 ID 표시를 유지한다", async () => {
@@ -1456,7 +1457,7 @@ test("미등록 MCP는 MCP별로 묶어 PC 수와 조치 버튼을 보이고 필
   const markup = String(shadow.body);
   assert.match(markup, /<th>MCP<\/th><th>연결<\/th><th class="num">PC<\/th><th>최근 발견<\/th><th>분류<\/th>/);
   assert.match(markup, /Docs[^]*<td class="num">2<\/td>/); assert.match(markup, /data-act="shadow-group" data-index="0"/);
-  assert.match(String(out.html.kpis), /미적용 PC<\/div><div class="value">2</);
+  assert.match(String(out.html.kpis), /미등록 MCP 발견 PC<\/div><div class="value">2</);
   let drawer;
   ui.policyDrawer((title, controls, tabs) => { drawer = { title, controls: String(controls), tabs }; });
   await ui.ACTIONS["shadow-group"]({ dataset: { index: "0" } });

@@ -53,12 +53,12 @@ test("user management answers who is active, stopped or waiting and keeps delete
     assert.equal(out.html.head, "사용자");
     assert.equal(out.html.active, "accounts");
     assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), ["accounts", "suspensions", "signups", ...(provider === "oidc" ? ["sso"] : [])]);
-    assert.deepEqual(cards(out.html.kpis), [["전체 사용자", 3], ["활성", 1], ["이용 중지 중", 1], ["가입 대기", 1]]);
+    assert.deepEqual(cards(out.html.kpis), [["전체 사용자", 3], ["계정 사용", 1], ["계정 중지", 1], ["MCP 이용 제한", 1], ["가입 대기", 1]]);
     assert.ok(calls.some((c) => c.startsWith("activity/analysis")));
     const body = String(out.html.tabs[0].body);
     assert.match(body, /삭제 사용자/); assert.match(body, /\[삭제됨\]/); assert.match(body, /data-act="account-restore"/);
-    assert.match(body, /\[활성\]/); assert.match(body, /\[설치 보고\]/);
-    assert.deepEqual(Object.keys(out.charts), ["c-people-departments", "c-people-blocked"]);
+    assert.match(body, /\[연결됨\]/); assert.match(body, /\[설치 보고\]/);
+    assert.deepEqual(Object.keys(out.charts), ["c-people-blocked"]);
   }
 });
 
@@ -77,7 +77,7 @@ test("endpoint management merges the two tables into one row per PC with silent 
   assert.equal(out.html.head, "엔드포인트");
   assert.equal(out.html.active, "managed");
   assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), ["devices", "managed"]);
-  assert.deepEqual(cards(out.html.kpis).map((x) => x[1]), [2, 1, 1, 0, 1]);
+  assert.deepEqual(cards(out.html.kpis).map((x) => x[1]), [2, 1, 0, 1, 0, 1]);
   const rows = String(out.html.tabs[0].body).match(/data-act="endpoint-device"/g) || [];
   assert.equal(rows.length, 2);
   const silent = String((await context.ROUTES.endpoints("", "devices", new URLSearchParams("silent=1"))).html.tabs[0].body);
