@@ -417,6 +417,9 @@ class EndpointSnapshotIngest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(queries)
         self.assertFalse(any("last_success_at" in q or "reported_at >" in q for q in queries),
                          "staleness should be displayed as unknown, not used to erase the conservative count")
+        # A device replaced by a reinstall is revoked and never reports again: its last findings must not keep alerting
+        # every call of the same person (pj3, 11-14). Same rule as the configuration count (shadow_count_for).
+        self.assertTrue(all("a.status='active'" in q for q in queries))
 
 
 if __name__ == "__main__":

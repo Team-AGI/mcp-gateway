@@ -801,10 +801,10 @@
       },
       {
         "path": "full_stack_lab/gateway/app/endpoint_plane.py",
-        "sha256": "9f8fa49ec940b046b6b0a287c129cb79a94a1016a39b520019c53957cae844a4",
+        "sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
         "committed_sha256": "9f8fa49ec940b046b6b0a287c129cb79a94a1016a39b520019c53957cae844a4",
-        "normalized_sha256": "9f8fa49ec940b046b6b0a287c129cb79a94a1016a39b520019c53957cae844a4",
-        "worktree_modified": false
+        "normalized_sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
+        "worktree_modified": true
       }
     ],
     "control_locations": [
