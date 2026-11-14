@@ -1101,7 +1101,7 @@ test("정책 조회 실패와 기록 없음은 집행 성공이나 정상 빈 �
   const unverified = build(true, { "/gw/policy/ledger": { policies: [{ policy_id: "P-2", name: "두 번째", status: "운영",
     enforced_by: "untrusted", recent: { count: 0 }, requirement_ids: ["POL-D-09"] }], source_state: "loaded", deployment: {} } });
   const body = String((await unverified.ROUTES.policy("", "ledger")).html.tabs.find((tab) => tab.key === "ledger").body);
-  assert.match(body, /기록 없음[^]*매핑 미확인/);
+  assert.match(body, /기록 없음[^]*<td>—<\/td>/);
   assert.doesNotMatch(body, /untrusted|POL-D-09|집행 중/);
   const noActivity = policyScreen({ "/gw/policy/activity?hours=24": new Error("실패") });
   const rows = String((await noActivity.ROUTES.policy("", "")).html.tabs[0].body);

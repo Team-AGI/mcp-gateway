@@ -1009,7 +1009,7 @@ function dashboardAnalysis(m) {
 function dashboardStatus(m) {
   const health = componentHealth(m.health);
   const deployment = m.ledger?.deployment;
-  return html`${m.o.enforcement === "enforce" ? "" : modeChip(m.o.enforcement)}${String(health).includes("확인 필요") ? health : ""}${deployment && (deployment.rules_match === false || deployment.data_match === false) ? engineChip(deployment) : ""}`;
+  return html`${m.o.enforcement === "enforce" ? "" : modeChip(m.o.enforcement)}${String(health).includes("확인 필요") ? health : ""}${deployment?.rules_match === true && deployment?.data_match === true ? "" : engineChip(deployment)}`;
 }
 
 function dashboardBar(m) {
@@ -3006,7 +3006,7 @@ let organizationPolicies = [];
 
 const policyExecutor = (p) => ({ opa: "정책 엔진", gateway: "게이트웨이", endpoint: "엔드포인트", vendor: "벤더" }[p.enforced_by] || "—");
 const policyEnvironment = (env) => ({ prod: "운영 환경", stage: "사전 검증 환경", dev: "개발 환경" }[env] || "—");
-const policyLinks = (p) => Array.isArray(p.pol_ids) ? [...new Set(p.pol_ids.filter((id) => /^POL-[A-Z]-\d{2}$/.test(id)))] : [];
+const policyLinks = (p) => [...new Set([...(Array.isArray(p.pol_ids) ? p.pol_ids : []), ...organizationPolicies.filter((o) => (o.runtime_rule_ids || []).includes(p.policy_id)).map((o) => o.id)].filter((id) => /^POL-[A-Z]-\d{2}$/.test(id)))].sort();
 const policyRecorded = (p) => Number.isSafeInteger(p.recent?.count) && p.recent.count > 0;
 const policyRecordLabel = (p) => policyRecorded(p) ? "기록 있음" : p.recent?.count === 0 ? "기록 없음" : "미확인";
 const policySourceLabel = (ledger) => ledger.source_state === "loaded" ? "조회 확인" : ledger.source_state === "unavailable" ? "조회 실패" : "미확인";
@@ -3220,7 +3220,7 @@ ROUTES.policy = async (_, tab, query = new URLSearchParams()) => {
       : empty(ledger.organization?.source_state === "available" ? "등록된 조직 정책 없음" : "조직 정책 원본 조회 실패"), { flush: true, tools: controls })}`;
   return {
     html: page({
-      head: head("보안 관리 정책", { status: html`${modeChip(enforcement)}${engineChip(ledger.deployment)}<span class="muted">${when(ledger.checked_at)}</span>`,
+      head: head("보안 관리 정책", { status: html`${enforcement === "enforce" ? "" : modeChip(enforcement)}${ledger.deployment?.rules_match === true && ledger.deployment?.data_match === true ? "" : engineChip(ledger.deployment)}`,
         actions: html`<div class="seg" role="group" aria-label="기간">${Object.entries(POLICY_RANGES).map(([k, [text]]) => html`<button class="seg-btn" type="button" data-act="policy-range" data-range="${k}" aria-pressed="${String(k === key)}">${text}</button>`)}</div>
           <button class="btn" data-act="enforcement" data-mode="${enforcement === "enforce" ? "monitor" : "enforce"}">${enforcement === "enforce" ? "관찰 모드로 전환" : "집행 모드로 전환"}</button>` }),
       active: tab === "ledger" ? "ledger" : "organization",
@@ -3229,7 +3229,7 @@ ROUTES.policy = async (_, tab, query = new URLSearchParams()) => {
           ${policyLedger.map((p) => html`<tr class="clickable" tabindex="0" data-act="policy" data-id="${p.policy_id}">
             <td><b>${p.name}</b><span class="sub mono">${p.policy_id}</span></td><td>${policyExecutor(p)}</td><td>${["운영", "중지", "폐기"].includes(p.status) ? p.status : "—"}</td>
             <td>${UNSUPPORTED_POLICY.has(p.policy_id) ? chip("outline", "지원 안 함") : outcomeDecision(p.outcome) ? decisionChip(outcomeDecision(p.outcome)) : "—"}</td>
-            <td>${chip(policyRecorded(p) ? "plain" : "outline", policyRecordLabel(p))}</td><td>${policyLinks(p).join(", ") || "매핑 미확인"}</td></tr>`)}
+            <td>${chip(policyRecorded(p) ? "plain" : "outline", policyRecordLabel(p))}</td><td>${policyLinks(p).join(", ") || "—"}</td></tr>`)}
           </tbody></table>${policyLedger.length ? "" : empty(ledger.source_state === "loaded" ? "등록된 정책 없음" : "정책 원본 조회 실패")}`, { flush: true }) }],
     }),
     charts: policyCharts(organizationPolicies, activity, analysis, range, policyLedger),
@@ -4093,7 +4093,7 @@ const ACTIONS = {
         ["마지막 판정 시각", when(p.recent?.last_seen_at)], 
         ["평가 우선순위", p.priority ?? "—"],
         ["대상 환경", Array.isArray(p.environments) ? p.environments.map(policyEnvironment).join(", ") : "—"]]) },
-      { key: "mapping", label: "정책 연결", body: kv([["관련 보안 정책", links.join(", ") || "매핑 미확인"],
+      { key: "mapping", label: "정책 연결", body: kv([["관련 보안 정책", links.join(", ") || "—"],
         ["연결 근거", links.length ? "정책 관리대장의 명시적 연결" : "검토된 연결 정보 없음"]]) },
     ]);
   },
