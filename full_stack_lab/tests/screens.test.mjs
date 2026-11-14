@@ -13,9 +13,8 @@ const agents = [
 ];
 
 test("endpoint cards split reporting from silent PCs and ignore revoked ones", () => {
-  assert.deepEqual(m.endpointCards(agents, NOW), { total: 4, reporting: 1, silent: 3, quarantined: 1, pending: 1 });
-  assert.deepEqual(m.managedMix(agents), { active: 1, pending: 1, quarantined: 1, unmanaged: 1 });
-  assert.deepEqual(m.reportAges(agents, NOW), { quarter: 1, hour: 1, day: 0, older: 2 });
+  assert.deepEqual(m.endpointCards(agents, NOW), { total: 4, reporting: 1, silent: 3, delayed: 1, stale: 2, quarantined: 1, pending: 1 });
+  assert.deepEqual(agents.map((a) => m.reportState(a, NOW)), ["fresh", "delayed", "stale", "stale", "fresh"]);
   assert.equal(m.filterEndpoints(agents, { silent: true, now: NOW }).length, 3);
   assert.equal(m.shadowPcs(agents), 2);
 });
@@ -31,9 +30,9 @@ test("user rows join call counts by name and keep deleted users in the same list
   const rows = m.userRows(accounts, [{ user_id: "u2", display_name: "삭제", status: "deleted" }], agents, m.peopleStats([{ key: "가나", total: 7, Block: 3 }]));
   assert.deepEqual(rows.map((r) => [r.state, r.stage, r.calls, r.blocked]), [["active", "active", 7, 3], ["deleted", "none", 0, 0]]);
   assert.deepEqual(m.userCards(accounts, [{}], [{ status: "pending" }, { status: "approved" }], [{ user_token: "x" }, { user_token: "x" }, { user_token: "y", resumed_at: "t" }]),
-    { total: 1, active: 1, stopped: 1, pending: 1, deleted: 1 });
-  assert.deepEqual(m.departmentCounts([{ department: "a" }, { department: "b" }, { department: "a" }]), [{ name: "a", value: 2 }, { name: "b", value: 1 }]);
-  assert.deepEqual(m.topBlocked([{ key: "x", Block: 1 }, { key: "y", Block: 5 }, { key: "z", Block: 0 }, { other: true, key: "o", Block: 9 }]), [{ name: "y", value: 5 }, { name: "x", value: 1 }]);
+    { total: 1, active: 1, disabled: 0, stopped: 1, pending: 1, deleted: 1 });
+  assert.deepEqual(rows.map((r) => r.pcs), [1, 0]);
+  assert.deepEqual(m.topBlocked([{ key: "x", Block: 1 }, { key: "y", Block: 5 }, { key: "z", Block: 0 }, { other: true, key: "o", Block: 9 }]), [{ name: "y", value: 5, total: 0 }, { name: "x", value: 1, total: 0 }]);
 });
 
 test("termination cards, stage counts and the due date follow the case status", () => {
@@ -50,8 +49,8 @@ test("server cards count attention, near expiry and blocking servers", () => {
   const servers = [{ id: "a", status: "READY", lifecycle: "OPERATING", calls: 10, blocked: 1 }, { id: "b", status: "DRIFT", lifecycle: "OPERATING", calls: 0 },
     { id: "c", status: "READY", lifecycle: "RETIRED" }];
   const regs = { a: { valid_until: new Date(NOW + 5 * 86400000).toISOString() }, b: { valid_until: new Date(NOW + 90 * 86400000).toISOString() } };
-  assert.deepEqual(m.serverCards(servers, regs, NOW), { operating: 2, attention: 1, due: 1, blocked: 1 });
-  assert.deepEqual(m.statusMix(servers), { READY: 1, DRIFT: 1 });
+  assert.deepEqual(m.serverCards(servers, regs, NOW), { operating: 2, live: 2, attention: 1, due: 1, unverified: 0, blocked: 1 });
+  assert.deepEqual(m.serverOrder(servers, regs, NOW).map((s) => s.id), ["a", "b", "c"]);
   assert.equal(m.blockRate(servers[0]), 10); assert.equal(m.blockRate(servers[1]), null);
 });
 
@@ -72,7 +71,7 @@ test("intake cards separate waiting, high risk and reassessment; stages and risk
     { status: "APPROVED", risk: { status: "ok", tier: "low" }, created_at: "2026-11-01T00:00:00Z", reviewed_at: "2026-11-03T00:00:00Z" },
     { status: "REJECTED", risk: { status: "ok", tier: "low" }, created_at: "2026-11-01T00:00:00Z", reviewed_at: "2026-11-05T00:00:00Z" },
     { status: "VALIDATING" }];
-  assert.deepEqual(m.intakeCards(requests, 1), { waiting: 2, days: 3, high: 1, reassess: 2 });
+  assert.deepEqual(m.intakeCards(requests, 1), { waiting: 2, days: 3, done: 2, high: 1, reassess: 2 });
   assert.deepEqual(m.intakeStages(requests).map((s) => s.value), [1, 2, 1, 1]);
   assert.deepEqual(m.riskMix(requests), { low: 2, medium: 0, high: 1, very_high: 0, none: 2 });
   assert.deepEqual(m.scanSummary({ critical: 2, high: 1, scanners: { Trivy: { status: "FAILED" } } }), { critical: 2, high: 1, failed: true });
