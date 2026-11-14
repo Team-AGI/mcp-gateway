@@ -779,28 +779,224 @@ function startDashboardRefresh() {
   dashboardTimer = setInterval(() => refreshDashboard(), 30000);
 }
 function dashboardCanRefresh() {
-  return current.page === "overview" && !document.hidden && !$("#drawer")?.classList.contains("open") && !$("#dialog")?.open
-    && !document.activeElement?.closest?.("#dashboard-kpis, #dashboard-registration, #dashboard-alerts, #dashboard-blocked");
+  return current.page === "overview" && (current.query.get("t") || "summary") === "summary" && !document.hidden
+    && !$("#drawer")?.classList.contains("open") && !$("#dialog")?.open
+    && !document.activeElement?.closest?.("#dashboard-summary, #dashboard-bar");
 }
+
+const DASH_RANGES = { "24h": ["24시간", 86400000], "7d": ["7일", 604800000], "30d": ["30일", 2592000000] };
+function dashboardRange(query) {
+  const key = DASH_RANGES[query.get("range")] ? query.get("range") : query.get("range") === "custom" ? "custom" : "24h";
+  const now = Date.now();
+  let until = now, since = now - DASH_RANGES["24h"][1];
+  if (key === "custom") {
+    const from = Date.parse(query.get("since")), to = Date.parse(query.get("until"));
+    if (Number.isFinite(to)) until = to;
+    since = Number.isFinite(from) && from < until ? from : until - DASH_RANGES["24h"][1];
+  } else since = now - DASH_RANGES[key][1];
+  const length = until - since;
+  return { key, since: new Date(since), until: new Date(until), length, previousSince: new Date(since - length), previousUntil: new Date(since) };
+}
+const dashboardScope = (since, until, server, extra = {}) => new URLSearchParams({ event_kind: "tools/call", since: since.toISOString(), until: until.toISOString(), ...(server ? { server } : {}), ...extra });
+const dashboardHref = (page, params) => `#/${page}?${params}`;
+const decisionOf = (name) => DECISIONS.find((d) => [charts.DECISION_LABEL[d], DECISION[d][1]].some((label) => name === label || name === t(label)));
+const bucketLength = (data) => (data?.bucket === "day" ? 86400000 : data?.bucket === "month" ? 2678400000 : 3600000);
+
+async function dashboardModel(query, options = {}) {
+  const r = dashboardRange(query), server = query.get("server") || "";
+  const range = (since, until) => dashboardScope(since, until, server);
+  const soft = (promise) => promise.catch(() => null);
+  const [o, pl, signups, inventory, cur, prev, blocked, health, alerts, previousAlerts, ledger, delivery, approvals] = await Promise.all([
+    gw("overview", options), planes(), api("/api/signup-requests?status=pending", options), gw("endpoint/inventory", options),
+    soft(gw(`activity/analysis?${range(r.since, r.until)}`, options)), soft(gw(`activity/analysis?${range(r.previousSince, r.previousUntil)}`, options)),
+    gw(`activity?${dashboardScope(r.since, r.until, server, { decision: "Block", limit: 10 })}`, options),
+    soft(gw("health", options)), soft(gw(`audit/alerts?${new URLSearchParams({ limit: 6, since: r.since.toISOString(), until: r.until.toISOString() })}`, options)),
+    soft(gw(`audit/alerts?${new URLSearchParams({ limit: 1, since: r.previousSince.toISOString(), until: r.previousUntil.toISOString() })}`, options)),
+    soft(gw("policy/ledger", options)), soft(gw("audit/siem", options)), soft(api("/approvals", options))]);
+  return { r, server, o, pl, signups, inventory, cur, prev, blocked, health, alerts, previousAlerts, ledger, delivery, approvals };
+}
+
+function dashboardTotals(data) {
+  const totals = Object.fromEntries(DECISIONS.map((d) => [d, 0]));
+  for (const row of data?.series || []) if (row.decision in totals) totals[row.decision] += Number(row.n) || 0;
+  return totals;
+}
+const count = (value) => (value == null || value === "" || !Number.isFinite(Number(value)) ? null : Number(value));
+const percent = (part, whole) => (whole > 0 ? part / whole * 100 : null);
+const percentText = (value) => (value == null ? "—" : value > 0 && value < 0.1 ? "<0.1%" : `${Math.round(value * 10) / 10}%`);
+function deltaView(now, before, { points = false, bad = "up" } = {}) {
+  if (now == null || before == null) return html`<span class="delta">—</span>`;
+  if (!points && before < 5) return html`<span class="delta">이전 ${before}</span>`;
+  const change = points ? now - before : (now - before) / before * 100;
+  const rounded = Math.round(change * 10) / 10;
+  if (Math.abs(rounded) < (points ? 0.1 : 1)) return html`<span class="delta">0${points ? "%p" : "%"}</span>`;
+  const worse = bad === "up" ? rounded > 0 : bad === "down" && rounded < 0;
+  return html`<span class="delta ${worse ? "bad" : ""}">${rounded > 0 ? "▲" : "▼"} ${Math.abs(rounded)}${points ? "%p" : "%"}</span>`;
+}
+
+function dashboardPending(m) {
+  const first = (rows, key) => rows.map((r) => r[key]).filter(Boolean).sort()[0] || null;
+  const approvals = m.approvals?.approvals || [], signups = m.signups?.requests || [];
+  const devices = m.inventory.agents.filter((x) => x.status !== "revoked" && ["pending", "quarantined"].includes(x.managed_state) && x.policy_hash);
+  const bypass = dedupeItems(m.pl?.items || []).filter((i) => i.state === "bypass_possible").length;
+  const types = [
+    ["호출 승인", m.approvals?.total ?? approvals.length, first(approvals, "created_at"), "#/overview?t=approvals"],
+    ["가입 승인", signupPendingTotal(m.signups), first(signups, "requested_at"), "#/people?t=signups&signup_status=pending"],
+    ["엔드포인트 활성화", devices.length, first(devices, "enrolled_at"), "#/endpoints?t=devices"],
+    ["도입 조치", m.o.intake_actions, null, "#/intake"], ["엔드포인트 도입 요청", m.o.endpoint_requests, null, "#/intake?t=requests"],
+    ["실행 여부 확인", m.o.unresolved_execution, null, "#/overview?t=unsent"], ["종료 처리", m.o.termination?.action_required, null, "#/termination?t=cases&attention=required"],
+    ["연결 통제 점검", bypass, null, "#/servers?t=items&state=bypass_possible"],
+  ].map(([type, n, at, href]) => ({ type, n: Number(n) || 0, summary: `${Number(n) || 0}건`, at, href })).filter((x) => x.n > 0);
+  types.sort((a, b) => (a.at ? Date.parse(a.at) : Infinity) - (b.at ? Date.parse(b.at) : Infinity));
+  return { items: types, total: types.reduce((sum, x) => sum + x.n, 0), oldest: types.find((x) => x.at)?.at || null };
+}
+
+function dashboardCards(m) {
+  const { o, r } = m, cur = m.cur, prev = m.prev;
+  const total = count(cur?.total), before = count(prev?.total);
+  const rate = total == null ? null : percent(dashboardTotals(cur).Block, total), previousRate = before == null ? null : percent(dashboardTotals(prev).Block, before);
+  const buckets = analysisSeries(cur);
+  const pending = dashboardPending(m);
+  const stations = o.workstations ? new Set(o.workstations.filter((w) => Number(w.shadow) > 0).map((w) => w.endpoint_id)) : new Set();
+  const agents = m.inventory.agents.filter((a) => a.status !== "revoked");
+  const unmanaged = agents.filter((a) => a.managed_state !== "active");
+  const gap = new Set([...stations, ...unmanaged.map((a) => a.endpoint_id)]);
+  const attention = (o.servers || []).filter(serverNeedsAttention).length;
+  const alertTotal = count(m.alerts?.total), previousAlertTotal = count(m.previousAlerts?.total);
+  const logs = dashboardScope(r.since, r.until, m.server);
+  const alertRange = new URLSearchParams({ t: "alerts", since: r.since.toISOString(), until: r.until.toISOString() });
+  const card = (label, value, foot, { href = "", tone = "", trend = "", of = null } = {}) => {
+    const body = html`<div class="label">${label}</div><div class="value">${value ?? "—"}${of == null ? "" : html`<small class="of">/ ${of}</small>`}</div><div class="foot">${foot}${trend ? raw(trend) : ""}</div>`;
+    return href ? html`<a class="kpi ${tone}" href="${href}">${body}</a>` : html`<div class="kpi ${tone}">${body}</div>`;
+  };
+  return html`<div class="kpis dash-kpis">
+    ${card("호출", total, html`${deltaView(total, before, { bad: "none" })}<span class="base">전기간</span>`, { href: dashboardHref("activity", logs), trend: charts.spark(buckets.map((b) => DECISIONS.reduce((s, d) => s + b[d], 0))) })}
+    ${card("차단 비율", percentText(rate), html`${deltaView(rate, previousRate, { points: true })}<span class="base">전기간</span>`, { href: dashboardHref("activity", dashboardScope(r.since, r.until, m.server, { decision: "Block" })), trend: charts.spark(buckets.map((b) => b.Block)) })}
+    ${card("처리할 일", pending.total, html`<span class="delta">${pending.oldest ? ago(pending.oldest) : "—"}</span><span class="base">최장 대기</span>`, { href: "#/overview?t=approvals", tone: pending.total > 0 ? "alert" : "" })}
+    ${card("경보", alertTotal, html`${deltaView(alertTotal, previousAlertTotal)}<span class="base">전기간</span>`, { href: dashboardHref("security", alertRange), tone: alertTotal > 0 ? "block" : "" })}
+    ${card("미적용", gap.size, html`<span class="delta">미등록 ${stations.size} · 미적용 ${unmanaged.length}</span>`, { href: stations.size ? "#/endpoints?t=shadow" : "#/endpoints?t=devices", tone: gap.size > 0 ? "alert" : "", of: new Set([...agents.map((a) => a.endpoint_id), ...stations]).size })}
+    ${card("점검 필요 서버", attention, "", { href: "#/servers?t=servers&attention=required", tone: attention > 0 ? "alert" : "", of: (o.servers || []).length })}
+  </div>`;
+}
+
+function dashboardCharts(m) {
+  const { r, o } = m, cur = m.cur || {}, prev = m.prev || {};
+  const serverName = Object.fromEntries((o.servers || []).map((s) => [s.id, s.display_name || s.id]));
+  const hostName = Object.fromEntries(m.inventory.agents.map((a) => [a.endpoint_id, a.hostname || a.endpoint_id]));
+  const series = analysisSeries(cur);
+  const go = (href) => { location.hash = href; };
+  const logs = (extra = {}) => dashboardScope(r.since, r.until, m.server, extra);
+  const around = (b) => ({ since: new Date(b.at).toISOString(), until: new Date(b.at + bucketLength(cur)).toISOString() });
+  const known = (rows) => (rows || []).filter((row) => !row.other && row.key);
+  const policies = known(cur.policies).slice(0, 8), people = known(cur.people).slice(0, 10), endpoints = known(cur.endpoints).slice(0, 10);
+  const violations = (b) => (b.Block || 0) + (b.Alert || 0);
+  const earlier = (b) => {
+    const from = b.at - r.length, to = from + bucketLength(cur);
+    return analysisSeries(prev).filter((p) => p.at >= from && p.at < to).reduce((sum, p) => sum + violations(p), 0);
+  };
+  const totals = dashboardTotals(cur);
+  return {
+    "c-dash-trend": () => ({ ...charts.decisionColumns(series.map((b) => b.label), series), onClick: (p) => {
+      const b = series[p.dataIndex], decision = decisionOf(p.seriesName);
+      if (b) go(dashboardHref("activity", logs({ ...around(b), ...(decision ? { decision } : {}) })));
+    } }),
+    "c-dash-donut": () => charts.donut(DECISIONS.map((d) => ({ name: charts.DECISION_LABEL[d], value: totals[d], color: charts.color(d) })),
+      { onClick: (p) => { const decision = decisionOf(p.name); if (decision) go(dashboardHref("activity", logs({ decision }))); } }),
+    "c-dash-policies": () => charts.bars(policies.map((p) => ({ name: policyLabel(p.key), value: (p.Block || 0) + (p.Alert || 0), color: charts.color(p.Block >= p.Alert ? "Block" : "Alert") })),
+      { onClick: (p) => { const row = policies[p.dataIndex]; if (row) go(`#/policy?detail_kind=policy&detail_id=${encodeURIComponent(row.key)}`); } }),
+    "c-dash-servers": () => charts.decisionColumns((cur.servers || []).map((x) => (x.other ? "기타" : serverName[x.key] || x.key)), cur.servers || [], { horizontal: true,
+      onClick: (p) => { const row = (cur.servers || [])[p.dataIndex]; if (row && !row.other) go(`#/servers/${encodeURIComponent(row.key)}`); } }),
+    "c-dash-violations": () => charts.lines(series.map((b) => b.label), [
+      { name: "정책 위반", data: series.map(violations), color: charts.color("Block"), area: true },
+      ...(prev.total ? [{ name: "전기간", data: series.map(earlier), color: "#8c9bb1", dashed: true }] : [])],
+    { onClick: (p) => { const b = series[p.dataIndex]; if (b) go(dashboardHref("activity", logs(around(b)))); } }),
+    "c-dash-people": () => charts.bars(people.map((p) => ({ name: p.key, value: p.total })),
+      { onClick: (p) => { const row = people[p.dataIndex]; if (row) go(dashboardHref("activity", logs({ person: row.key }))); } }),
+    "c-dash-endpoints": () => charts.bars(endpoints.map((p) => ({ name: hostName[p.key] || p.key, value: p.total })),
+      { onClick: (p) => { const row = endpoints[p.dataIndex]; if (row) go(dashboardHref("activity", logs({ endpoint: row.key }))); } }),
+  };
+}
+
+function dashboardTables(m) {
+  const pending = dashboardPending(m), rows = pending.items.slice(0, 5);
+  const wait = (value) => {
+    const hours = value ? (Date.now() - Date.parse(value)) / 3600000 : null;
+    return value ? html`<span class="${hours >= 4 ? "bad-text" : hours <= 1 ? "muted" : ""}">${ago(value)}</span>` : NONE;
+  };
+  const todo = panel("처리할 일", rows.length ? html`<table class="data compact"><thead><tr><th>유형</th><th>내용</th><th class="num">대기</th></tr></thead><tbody>
+    ${rows.map((i) => html`<tr class="clickable" tabindex="0" data-act="goto" data-href="${i.href}"><td>${i.type}</td><td>${i.summary}</td><td class="num">${wait(i.at)}</td></tr>`)}</tbody></table>`
+    : empty("처리할 일 없음"), { flush: true, sub: pending.total ? `${pending.total}건` : "" });
+  const blockedRows = m.blocked?.rows || [];
+  const recent = panel("최근 차단", blockedRows.length ? html`<table class="data compact"><thead><tr><th>시각</th><th>사용자</th><th>도구</th><th>사유</th></tr></thead><tbody>
+    ${blockedRows.map((r) => html`<tr class="clickable" tabindex="0" data-act="decision" data-id="${r.id}"><td class="t">${when(r.at, { seconds: true })}</td><td>${r.who}</td>
+      <td><b>${r.server_name || r.server}</b> <span class="mono muted">${r.tool}</span></td><td>${decisionReason(r)}</td></tr>`)}</tbody></table>`
+    : empty("차단된 호출 없음", { failed: !m.blocked }), { flush: true,
+    end: html`<a class="btn sm" href="${dashboardHref("activity", dashboardScope(m.r.since, m.r.until, m.server, { decision: "Block" }))}">호출 기록 <span aria-hidden="true">↗</span></a>` });
+  return html`<div class="dash-grid"><div class="c5">${todo}</div><div class="c7">${recent}</div></div>`;
+}
+
+function dashboardSummary(m) {
+  const cur = m.cur || {}, total = Number(cur.total) || 0;
+  const box = (cls, title, id, label, size, sub = "") => html`<div class="${cls}">${panel(title, chartBox(id, label, size), { sub })}</div>`;
+  return html`${dashboardCards(m)}
+    <div class="dash-grid">
+      ${box("c8", "시간대별 호출", "c-dash-trend", "시간대별 호출 판정 추이", "d240", m.cur ? `${total}건` : "")}
+      ${box("c4", "판정 분포", "c-dash-donut", "판정 분포", "d240")}
+      ${box("c4", "상위 차단·경보 정책", "c-dash-policies", "상위 차단·경보 정책", "d220")}
+      ${box("c4", "서버별 호출", "c-dash-servers", "서버별 호출 판정", "d220")}
+      ${box("c4", "정책 위반 추이", "c-dash-violations", "정책 위반 추이", "d220")}
+      ${box("c6", "사용자별 호출", "c-dash-people", "사용자별 호출", "d220")}
+      ${box("c6", "엔드포인트별 호출", "c-dash-endpoints", "엔드포인트별 호출", "d220")}
+    </div>
+    ${dashboardTables(m)}`;
+}
+
+function dashboardStatus(m) {
+  const matched = m.ledger?.deployment;
+  const engine = typeof matched?.rules_match === "boolean" && typeof matched?.data_match === "boolean"
+    ? chip(matched.rules_match && matched.data_match ? "allow" : "alert", matched.rules_match && matched.data_match ? "정책 엔진 일치" : "정책 엔진 불일치") : chip("outline", "정책 엔진 확인 불가");
+  const d = m.delivery;
+  const siem = !d ? chip("alert", "관제 확인 불가") : Number(d.pending) > 0 ? chip(Number(d.retrying) > 0 ? "alert" : "outline", `관제 미전달 ${d.pending}`)
+    : d.last_delivered ? chip("allow", `관제 전달 ${ago(d.last_delivered)}`) : chip("outline", "관제 설정 안 됨");
+  return html`${modeChip(m.o.enforcement)}${componentHealth(m.health)}${engine}${siem}`;
+}
+
+function dashboardBar(m) {
+  const r = m.r;
+  const servers = (m.o.servers || []).map((s) => [s.id, s.display_name || s.id]);
+  return html`<div class="dash-bar" id="dashboard-bar" role="group" aria-label="조회 조건">
+    <div class="seg" role="group" aria-label="기간">${[...Object.entries(DASH_RANGES).map(([k, [label]]) => [k, label]), ["custom", "직접"]].map(([k, label]) => html`<button class="seg-btn" type="button" data-act="dash-range" data-range="${k}" aria-pressed="${String(r.key === k)}">${label}</button>`)}</div>
+    ${r.key === "custom" ? html`<input type="datetime-local" data-dash="since" value="${dateTimeInput(r.since)}" aria-label="조회 시작 시각" /><input type="datetime-local" data-dash="until" value="${dateTimeInput(r.until)}" aria-label="조회 종료 시각" />` : ""}
+    <select data-dash="server" aria-label="서버"><option value="">모든 서버</option>${servers.map(([id, name]) => html`<option value="${id}" ${id === m.server ? raw("selected") : ""}>${name}</option>`)}</select>
+    <button class="btn sm" type="button" data-act="dash-refresh">새로고침</button>
+    <span class="muted updated" id="dashboard-updated">${clockText(new Date(), { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+  </div>`;
+}
+
+function dashboardGo(patch) {
+  const q = new URLSearchParams(current.query);
+  for (const [key, value] of Object.entries(patch)) { if (value) q.set(key, value); else q.delete(key); }
+  location.hash = `#/overview?${q}`;
+}
+
 async function refreshDashboard() {
   if (dashboardBusy || !dashboardCanRefresh()) return;
-  const generation = dashboardGeneration, seq = routeSeq, window = recentBlockedWindow();
+  const generation = dashboardGeneration, seq = routeSeq;
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 10000);
   dashboardRequest = controller; dashboardBusy = true;
   try {
-    const options = { signal: controller.signal };
-    const [o, pl, signups, inventory, blocked, health, consents, alerts] = await Promise.all([gw("overview", options), api("/api/integrations", options),
-      api("/api/signup-requests?status=pending", options), gw("endpoint/inventory", options), gw(`activity?${blockedParams(window, 10)}`, options),
-      gw("health", options).catch(() => null), api("/api/consents", options).catch(() => null), gw("audit/alerts?limit=6", options).catch(() => null)]);
+    const m = await dashboardModel(current.query, { signal: controller.signal });
     if (generation !== dashboardGeneration || seq !== routeSeq || !dashboardCanRefresh()) return;
-    planesCache = { at: Date.now(), data: pl };
-    feed.rows = mergeRows([], blocked.rows);
-    $("#dashboard-kpis").innerHTML = String(dashboardKpis(o, pl, alerts));
-    $("#dashboard-registration").innerHTML = String(dashboardRegistration(o, signups, inventory, consents));
-    $("#dashboard-alerts").innerHTML = String(dashboardAlerts(alerts));
-    $("#dashboard-blocked").innerHTML = String(dashboardBlocked(feed.rows, window));
+    planesCache = { at: Date.now(), data: m.pl };
+    policyLedger = m.ledger?.policies || policyLedger;
+    feed.rows = mergeRows([], m.blocked.rows);
+    $("#dashboard-summary").innerHTML = String(dashboardSummary(m));
+    charts.disposeAll();
+    charts.register(dashboardCharts(m));
+    charts.mountVisible($("#view"));
     const status = $("#view .page-head .status");
-    if (status) status.innerHTML = String(html`${modeChip(o.enforcement)}${componentHealth(health)}`);
+    if (status) status.innerHTML = String(dashboardStatus(m));
+    $("#dashboard-updated").textContent = clockText(new Date(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     $("#dashboard-refresh-status").innerHTML = "";
   } catch {
     controller.abort();
@@ -810,61 +1006,11 @@ async function refreshDashboard() {
     if (generation === dashboardGeneration) { dashboardBusy = false; dashboardRequest = null; }
   }
 }
-const recentBlockedWindow = () => { const end = Date.now(); return { since: new Date(end - 86400000).toISOString(), until: new Date(end).toISOString() }; };
-const blockedParams = (window, limit) => new URLSearchParams({ decision: "Block", event_kind: "tools/call", ...window, ...(limit ? { limit } : {}) });
-function dashboardKpis(o, pl, alerts) {
-  const x = o.execution || {}, term = o.termination || {};
-  const todayFilter = `since=${encodeURIComponent(o.today_since)}&event_kind=tools%2Fcall`;
-  const abnormalServers = (o.servers || []).filter(serverNeedsAttention).length;
-  const items = dedupeItems(pl?.items || []);
-  const count = (state) => items.filter((i) => i.state === state).length;
-  return html`<div class="dashboard-kpi-groups">
-        <section><h2>확인 및 조치</h2><div class="kpis kpis-5">
-          <a class="kpi ${o.unresolved_execution > 0 ? "alert" : ""}" href="#/overview?t=unsent"><div class="label">실행 여부 확인</div><div class="value">${o.unresolved_execution ?? "—"}</div></a>
-          <a class="kpi ${count("bypass_possible") > 0 ? "alert" : ""}" href="#/servers?t=items&state=bypass_possible"><div class="label">연결 통제 점검</div><div class="value">${count("bypass_possible")}</div></a>
-          <a class="kpi ${abnormalServers > 0 ? "alert" : ""}" href="#/servers?t=servers&attention=required"><div class="label">MCP 서버 점검</div><div class="value">${abnormalServers}</div></a>
-          <div class="kpi ${term.action_required > 0 ? "alert" : ""}"><a class="kpi-main" href="#/termination?t=cases&attention=required"><div class="label">종료 처리</div><div class="value">${term.action_required ?? "—"}</div></a>
-            <a class="kpi-detail" href="#/termination?t=cases&attention=overdue"><span>기한 초과</span><b>${term.overdue ?? "—"}</b></a></div>
-          <a class="kpi ${alerts?.last_24h > 0 ? "block" : ""}" href="${alerts?.day_since ? `#/security?${new URLSearchParams({ t: "alerts", since: alerts.day_since, until: alerts.day_until })}` : "#/security?t=alerts&hours=24"}"><div class="label">24시간 경보</div><div class="value">${alerts?.last_24h ?? "—"}</div></a>
-        </div></section>
-        <section><h2>오늘 도구 호출</h2><div class="kpis kpis-2">
-          <a class="kpi" href="#/activity?${todayFilter}"><div class="label">전체 호출</div><div class="value">${x.tool_calls ?? "—"}</div></a>
-          <a class="kpi ${x.blocked ? "block" : ""}" href="#/activity?${todayFilter}&decision=Block"><div class="label">차단된 호출</div><div class="value">${x.blocked ?? "—"}</div></a>
-        </div></section>
-      </div>`;
-}
-function dashboardRegistration(o, signups, inventory, consents) {
-  const activationCount = inventory.agents.filter((a) => a.status !== "revoked" && ["pending", "quarantined"].includes(a.managed_state) && a.policy_hash).length;
-  const consentCount = consents?.consents ? new Set(consents.consents.filter((c) => c.status === "PENDING").map((c) => c.server_id)).size : null;
-  const shadowCount = o.workstations ? o.workstations.filter((station) => Number(station.shadow) > 0).length : null;
-  const todo = [["엔드포인트 도입 요청", o.endpoint_requests, "#/intake?t=requests"], ["도구 이용 동의", consentCount, "#/consent"],
-    ["미등록 MCP 엔드포인트", shadowCount, "#/endpoints?t=shadow"]];
-  return panel("승인 및 등록", html`<div class="action-list">
-            <a class="action-link" href="#/people?t=signups&signup_status=pending"><span>가입 승인</span><b class="n">${signupPendingTotal(signups)}</b></a>
-            <a class="action-link" href="#/endpoints?t=devices"><span>엔드포인트 활성화</span><b class="n">${activationCount}</b></a>
-            <a class="action-link" href="#/intake"><span>도입 조치 필요</span><b class="n">${o.intake_actions || 0}</b></a>
-            ${todo.map(([label, n, href]) => html`<a class="action-link" href="${href}"><span>${label}</span><b class="n ${n > 0 ? "hot" : ""}">${n ?? "—"}</b></a>`)}
-          </div>`);
-}
-function dashboardAlerts(alerts) {
-  return panel("최근 경보", alerts?.alerts?.length ? html`<table class="data compact"><tbody>${alerts.alerts.map((a) => {
-    const [target, href] = alertTarget(a);
-    const cells = html`<td class="small nowrap">${ago(a.created_at)}</td>
-      <td>${chip(a.kind === "incident-deadline" || a.kind === "policy-self-test-failed" ? "alert" : "block", ALERT_KIND[a.kind] || a.kind)}</td><td>${target}</td>`;
-    return href ? html`<tr class="clickable" tabindex="0" data-act="goto" data-href="${href}">${cells}</tr>` : html`<tr>${cells}</tr>`; })}</tbody></table>`
-    : empty("경보 없음", { failed: !alerts }), { flush: true, end: html`<a class="btn sm" href="#/security?t=alerts">전체</a>` });
-}
-function dashboardBlocked(rows, window) {
-  return panel("최근 차단 10건", rows.length ? decisionTable(rows) : empty("차단된 호출 없음"), { flush: true, sub: "최근 24시간",
-    end: html`<a class="btn sm" href="#/activity?${blockedParams(window)}">차단 로그 <span aria-hidden="true">↗</span></a>` });
-}
 
 ROUTES.overview = async (arg, tab, query = new URLSearchParams()) => {
-  const blockedWindow = recentBlockedWindow();
-  const [o, blocked, pl, lat, net, health, approvalData, signups, inventory, executionTab, consents, alerts, ledger] = await Promise.all([gw("overview"), gw(`activity?${blockedParams(blockedWindow, 10)}`), planes(),
-    gw("latency").catch(() => null), gw("endpoint/network-quality").catch(() => null), gw("health").catch(() => null), api("/approvals"), api("/api/signup-requests?status=pending"), gw("endpoint/inventory"), executionConfirmationTab(query),
-    api("/api/consents").catch(() => null), gw("audit/alerts?limit=6").catch(() => null), gw("policy/ledger").catch(() => null)]);
-  policyLedger = ledger?.policies || policyLedger;
+  const [m, lat, net, approvalData, executionTab] = await Promise.all([dashboardModel(query), gw("latency").catch(() => null), gw("endpoint/network-quality").catch(() => null),
+    api("/approvals"), executionConfirmationTab(query)]);
+  policyLedger = m.ledger?.policies || policyLedger;
   const requestedPage = Math.min(approvalPageNumber(query), Math.max(1, Math.ceil((approvalData.total ?? approvalData.approvals.length) / (approvalData.page_size || 30))));
   if (requestedPage !== approvalPageNumber(query)) {
     query.set("approval_page", requestedPage);
@@ -872,25 +1018,21 @@ ROUTES.overview = async (arg, tab, query = new URLSearchParams()) => {
   }
   const pageData = requestedPage > 1 ? await api(`/approvals?page=${requestedPage}`) : approvalData;
   setApprovalLists(approvalData, pageData);
-  const serverName = Object.fromEntries((o.servers || []).map((server) => [server.id, server.display_name || server.id]));
-  feed.rows = mergeRows([], blocked.rows);
+  const serverName = Object.fromEntries((m.o.servers || []).map((server) => [server.id, server.display_name || server.id]));
+  feed.rows = mergeRows([], m.blocked.rows);
   return {
     html: page({
-      head: head("대시보드", { status: html`${modeChip(o.enforcement)}${componentHealth(health)}` }),
-      kpis: html`<div id="dashboard-refresh-status" class="dashboard-refresh-status" role="status"></div><div id="dashboard-kpis">${dashboardKpis(o, pl, alerts)}</div>`,
+      head: head("대시보드", { status: dashboardStatus(m) }),
+      kpis: html`<div id="dashboard-refresh-status" class="dashboard-refresh-status" role="status"></div>${dashboardBar(m)}`,
       active: tab || "summary",
       tabs: [
-        { key: "summary", label: "요약", body: html`<div class="stack">
-          <div id="dashboard-registration">${dashboardRegistration(o, signups, inventory, consents)}</div>
-          <div id="dashboard-alerts">${dashboardAlerts(alerts)}</div>
-          <div id="dashboard-blocked">${dashboardBlocked(feed.rows, blockedWindow)}</div>
-        </div>` },
+        { key: "summary", label: "개요", body: html`<div id="dashboard-summary">${dashboardSummary(m)}</div>` },
         { key: "approvals", label: "호출 승인", n: approvalPaging.total, hot: approvalPaging.total > 0, body: html`<div id="approval-queue">${approvalWorkspace(query)}</div>` },
         executionTab,
         { key: "latency", label: "성능", body: performancePanels(lat, net, serverName) },
       ],
     }),
-    charts: {},
+    charts: dashboardCharts(m),
     after: () => { startSystemMetrics(); startApprovalRefresh(); startDashboardRefresh(); if (arg) showApproval(arg); },
   };
 };
@@ -975,12 +1117,10 @@ function renderFeedStatus() {
   }
 }
 
-function feedCharts() {
-  const data = feed.analysis || { series: [], hours: [], responses: [], harnesses: [], servers: [], people: [] };
+function analysisSeries(data) {
   const occupied = new Map();
-  for (const row of data.series || []) {
-    const at = new Date(row.at);
-    const key = at.getTime();
+  for (const row of data?.series || []) {
+    const key = new Date(row.at).getTime();
     if (!occupied.has(key)) occupied.set(key, Object.fromEntries(DECISIONS.map((decision) => [decision, 0])));
     if (DECISIONS.includes(row.decision)) occupied.get(key)[row.decision] = Number(row.n) || 0;
   }
@@ -993,11 +1133,17 @@ function feedCharts() {
       const label = data.bucket === "hour" ? `${dayLabel(cursor)} ${pad(cursor.getHours())}${lang() === "en" ? ":00" : "시"}`
         : data.bucket === "day" ? `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}-${pad(cursor.getDate())}`
           : `${cursor.getFullYear()}-${pad(cursor.getMonth() + 1)}`;
-      series.push({ label, ...(occupied.get(at) || Object.fromEntries(DECISIONS.map((decision) => [decision, 0]))) });
+      series.push({ label, at, ...(occupied.get(at) || Object.fromEntries(DECISIONS.map((decision) => [decision, 0]))) });
       if (data.bucket === "month") cursor.setMonth(cursor.getMonth() + 1);
       else cursor.setTime(cursor.getTime() + (data.bucket === "day" ? 86400000 : 3600000));
     }
   }
+  return series;
+}
+
+function feedCharts() {
+  const data = feed.analysis || { series: [], hours: [], responses: [], harnesses: [], servers: [], people: [] };
+  const series = analysisSeries(data);
   return {
     "c-minutes": () => charts.decisionColumns(series.map((b) => b.label), series),
     "c-by-server": () => charts.decisionColumns(data.servers.map((x) => x.key), data.servers, { horizontal: true, grouped: true }),
@@ -3592,6 +3738,14 @@ const ACTIONS = {
     await gw("enforcement", { method: "PUT", body: { mode } });
     toast("전환했습니다."); reload();
   },
+  "dash-range"(el) {
+    const key = el.dataset.range;
+    if (key === "custom") {
+      const range = dashboardRange(current.query);
+      dashboardGo({ range: key, since: range.since.toISOString(), until: range.until.toISOString() });
+    } else dashboardGo({ range: key === "24h" ? "" : key, since: "", until: "" });
+  },
+  "dash-refresh": () => route(),
   "open-case": (el) => { location.hash = `#/termination/${el.dataset.id}`; },
   async "open-termination"(el) {
     const grade = el.dataset.grade;
@@ -3844,6 +3998,12 @@ document.addEventListener("change", (event) => {
     }
     event.target.form.elements.requested_transport.value = event.target.value === "repository" ? "stdio" : "streamable-http";
     resetIntakeTools(event.target.form);
+    return;
+  }
+  const dash = event.target.closest("[data-dash]");
+  if (dash) {
+    const value = dash.type === "datetime-local" ? (dash.value ? new Date(dash.value).toISOString() : "") : dash.value;
+    dashboardGo({ [dash.dataset.dash]: value });
     return;
   }
   const coverageFilter = event.target.closest("[data-coverage-filter]");

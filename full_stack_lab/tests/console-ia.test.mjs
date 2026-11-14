@@ -47,7 +47,7 @@ function build(admin = true, extra = {}) {
     localStorage: { getItem: () => "fixture-token" }, location: { hash: "#/activity", replace() {} },
     history: { state: null, replaceState() {}, pushState() {}, back() {} },
     document: { hidden: false, querySelector: node, querySelectorAll: () => [] },
-    charts: { DECISION_LABEL: {}, register() {}, mountVisible() {}, disposeAll() {}, redraw() {} },
+    charts: { DECISION_LABEL: {}, register() {}, mountVisible() {}, disposeAll() {}, redraw() {}, spark: () => "" },
     setInterval(fn) { const id = timers.size + 1; timers.set(id, fn); return id; },
     clearInterval(id) { timers.delete(id); },
     fetch: async (url, options) => {
@@ -438,19 +438,17 @@ test("대시보드는 호출 승인 탭에서만 목록을 표시하고 각 관�
   assert.equal(out.html.active, "approvals");
   const summary = String(out.html.tabs.find((t) => t.key === "summary").body);
   const queue = String(out.html.tabs.find((t) => t.key === "approvals").body);
-  assert.match(String(out.html.kpis), /오늘 도구 호출/);
-  assert.match(String(out.html.kpis), /전체 호출<\/div><div class="value">20/);
-  assert.match(String(out.html.kpis), /차단된 호출<\/div><div class="value">6/);
-  assert.doesNotMatch(String(out.html.kpis), /오늘 운영 현황|현재 상태|통제 적용 엔드포인트|실행된 호출/);
-  assert.match(String(out.html.kpis), /href="#\/overview\?t=unsent"><div class="label">실행 여부 확인<\/div><div class="value">305<\/div>/);
-  assert.match(String(out.html.kpis), /종료 처리<\/div><div class="value">9<\/div>/);
-  assert.match(String(out.html.kpis), /attention=overdue"><span>기한 초과<\/span><b>3/);
-  assert.doesNotMatch(summary, /실행 확인 필요|종료 기한 초과/);
+  assert.match(String(out.html.kpis), /data-act="dash-range" data-range="24h" aria-pressed="true"/);
+  for (const label of ["호출", "차단 비율", "처리할 일", "경보", "미적용", "점검 필요 서버"]) assert.match(summary, new RegExp(`<div class="label">${label}</div>`));
+  assert.match(summary, /href="#\/overview\?t=approvals"><div class="label">처리할 일<\/div><div class="value">323<\/div>/);
+  assert.match(summary, /<td>실행 여부 확인<\/td><td>305건<\/td>/);
+  assert.match(summary, /<td>종료 처리<\/td><td>9건<\/td>/);
+  assert.doesNotMatch(summary, /오늘 도구 호출|실행 확인 필요|종료 기한 초과|도구 이용 동의/);
   assert.equal((summary.match(/<tr[^>]+data-act="approval"/g) || []).length, 0);
   assert.equal((queue.match(/<tr[^>]+data-act="approval"/g) || []).length, 7);
   assert.doesNotMatch(summary, /호출 승인 요청|approval-preview/);
-  assert.match(summary, /href="#\/people\?t=signups&signup_status=pending"[^]*?가입 승인<\/span><b class="n">1<\/b>/);
-  assert.match(summary, /엔드포인트 활성화<\/span><b class="n">1<\/b>/);
+  assert.equal((summary.match(/<tr class="clickable"[^>]+data-act="goto"/g) || []).length, 5);
+  assert.match(summary, /<td>호출 승인<\/td><td>7건<\/td><td class="num">/);
   assert.match(queue, /&lt;img/);
   assert.doesNotMatch(queue, /data-act="approve" data-id="call-0"/);
   assert.doesNotMatch(queue, /data-act="approve"|data-act="reject"/);
@@ -463,7 +461,7 @@ test("MCP 점검 목록은 대시보드와 같은 세 상태만 표시한다", a
   const ui = build(true, { "/gw/registry": { servers, tools: [], registrations: {} } });
   ui.responses["/gw/overview"].servers = servers;
   const overview = await ui.ROUTES.overview("", "summary");
-  assert.match(String(overview.html.kpis), /attention=required"><div class="label">MCP 서버 점검<\/div><div class="value">3<\/div>/);
+  assert.match(String(overview.html.tabs[0].body), /attention=required"><div class="label">점검 필요 서버<\/div><div class="value">3<small class="of">\/ 5<\/small><\/div>/);
   const result = await ui.ROUTES.servers("", "servers", new URLSearchParams("attention=required"));
   const body = String(result.html.tabs[0].body);
   assert.equal(result.html.tabs[0].n, 3);
@@ -482,7 +480,8 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.deepEqual(Array.from(overview.html.tabs, (t) => t.key), ["summary", "approvals", "unsent", "latency"]);
   assert.doesNotMatch(String(overview.html.tabs[0].body), /조직 통제 의존 경로|c-connections-matrix/);
   assert.equal(overview.charts["c-ov-matrix"], undefined);
-  assert.match(String(overview.html.kpis), /href="#\/servers\?t=items&state=bypass_possible"/);
+  assert.match(String(overview.html.tabs[0].body), /<td>연결 통제 점검<\/td><td>1건<\/td>/);
+  assert.match(String(overview.html.tabs[0].body), /data-href="#\/servers\?t=items&amp;state=bypass_possible"/);
   const result = await ui.ROUTES.servers("", "items", new URLSearchParams());
   const body = String(result.html.tabs.find((t) => t.key === "items").body);
   assert.match(body, /연결 유형별 통제 현황[^]*연결 항목 수[^]*연결별 통제 상태/);
@@ -579,32 +578,110 @@ test("통합 분석 새로고침은 표도 갱신하고 이전 필터의 늦은 
   assert.match(ui.node("#analysis-endpoints").innerHTML, /historic/);
 });
 
-test("최근 차단 미리보기와 이동 링크는 같은 24시간 도구 호출 범위다", async () => {
+test("최근 차단 미리보기와 이동 링크는 선택한 기간과 서버의 도구 호출 범위다", async () => {
   const ui = build();
-  const out = await ui.ROUTES.overview("", "summary");
+  const out = await ui.ROUTES.overview("", "summary", new URLSearchParams("range=7d&server=docs"));
   const request = new URL(ui.calls.find((p) => p.startsWith("/gw/activity?")), "http://test").searchParams;
   const body = String(out.html.tabs[0].body);
-  const href = body.match(/href="([^"]+)">차단 로그/)[1].replaceAll("&amp;", "&");
+  const href = body.match(/href="([^"]+)">호출 기록/)[1].replaceAll("&amp;", "&");
   const target = new URL(href.slice(1), "http://test").searchParams;
-  for (const key of ["since", "until", "decision", "event_kind"]) assert.equal(request.get(key), target.get(key));
+  for (const key of ["since", "until", "decision", "event_kind", "server"]) assert.equal(request.get(key), target.get(key));
   assert.equal(request.get("limit"), "10");
+  assert.equal(request.get("decision"), "Block");
+  assert.equal(request.get("server"), "docs");
   assert.equal(request.get("event_kind"), "tools/call");
-  assert.equal(new Date(request.get("until")) - new Date(request.get("since")), 86400000);
+  assert.equal(new Date(request.get("until")) - new Date(request.get("since")), 7 * 86400000);
 });
 
-test("대시보드 갱신은 지표와 등록 건수를 바꾸고 검토와 화면 이동을 보존한다", async () => {
+test("대시보드 기간은 직전 같은 기간과 비교하고 분석 조회에 같은 조건을 쓴다", async () => {
+  const ui = build();
+  await ui.ROUTES.overview("", "summary", new URLSearchParams("range=30d"));
+  const analyses = ui.calls.filter((p) => p.startsWith("/gw/activity/analysis?")).map((p) => new URL(p, "http://test").searchParams);
+  assert.equal(analyses.length, 2);
+  const [now, before] = analyses;
+  assert.equal(new Date(now.get("until")) - new Date(now.get("since")), 30 * 86400000);
+  assert.equal(before.get("until"), now.get("since"));
+  assert.equal(new Date(before.get("until")) - new Date(before.get("since")), 30 * 86400000);
+  assert.equal(now.get("event_kind"), "tools/call");
+  const alerts = ui.calls.filter((p) => p.startsWith("/gw/audit/alerts?")).map((p) => new URL(p, "http://test").searchParams);
+  assert.equal(alerts[1].get("until"), alerts[0].get("since"));
+});
+
+test("대시보드 카드는 전기간 증감을 보이고 작은 기준값은 이전 값으로만 표시한다", async () => {
+  const rows = (n, blocked) => ({ total: n, bucket: "hour", series: [{ at: "2026-11-14T01:00:00", decision: "Allow", n: n - blocked }, { at: "2026-11-14T01:00:00", decision: "Block", n: blocked }] });
+  const ui = build();
+  let first = true;
+  const real = ui.context.fetch;
+  ui.context.fetch = async (url, options) => {
+    if (url.startsWith("/gw/activity/analysis?")) { const out = first ? rows(200, 20) : rows(100, 5); first = false; return { ok: true, status: 200, headers: { get: () => null }, json: async () => out }; }
+    if (url.startsWith("/gw/audit/alerts?limit=6")) return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ alerts: [], total: 3 }) };
+    if (url.startsWith("/gw/audit/alerts?limit=1")) return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ alerts: [], total: 2 }) };
+    return real(url, options);
+  };
+  const body = String((await ui.ROUTES.overview("", "summary")).html.tabs[0].body);
+  assert.match(body, /<div class="label">호출<\/div><div class="value">200<\/div><div class="foot"><span class="delta ">▲ 100%<\/span><span class="base">전기간/);
+  assert.match(body, /<div class="label">차단 비율<\/div><div class="value">10%<\/div><div class="foot"><span class="delta bad">▲ 5%p<\/span>/);
+  assert.match(body, /<div class="label">경보<\/div><div class="value">3<\/div><div class="foot"><span class="delta">이전 2<\/span>/);
+});
+
+test("대시보드 차트 6종은 판정·서버·정책·사용자·엔드포인트 조건이 걸린 호출 기록으로 이동한다", async () => {
+  const analysis = { total: 30, bucket: "hour",
+    series: [{ at: "2026-11-14T01:00:00", decision: "Allow", n: 20 }, { at: "2026-11-14T02:00:00", decision: "Block", n: 10 }],
+    servers: [{ key: "docs", total: 30, Allow: 20, Block: 10 }], people: [{ key: "홍길동", total: 30 }],
+    policies: [{ key: "P-RATE-001", total: 10, Block: 10, Alert: 0 }], endpoints: [{ key: "ep-1", total: 30 }] };
+  const ui = build(true, { "/gw/policy/ledger": { policies: [{ policy_id: "P-RATE-001", name: "호출 횟수 상한" }] } });
+  const real = ui.context.fetch;
+  ui.context.fetch = async (url, options) => url.startsWith("/gw/activity/analysis?")
+    ? { ok: true, status: 200, headers: { get: () => null }, json: async () => analysis } : real(url, options);
+  const out = await ui.ROUTES.overview("", "summary");
+  assert.deepEqual(Object.keys(out.charts), ["c-dash-trend", "c-dash-donut", "c-dash-policies", "c-dash-servers", "c-dash-violations", "c-dash-people", "c-dash-endpoints"]);
+  const charts = ui.context.charts;
+  Object.assign(charts, { color: (d) => d, decisionColumns: (labels, rows, options) => ({ labels, rows, ...options }), donut: (items, options) => ({ items, ...options }),
+    bars: (items, options) => ({ items, ...options }), lines: (labels, series, options) => ({ labels, series, ...options }) });
+  const go = (id, event) => { const option = out.charts[id](); option.onClick(event); return ui.context.location.hash; };
+  const hash = go("c-dash-trend", { dataIndex: 1, seriesName: "차단" });
+  assert.match(hash, /^#\/activity\?/);
+  assert.match(hash, /decision=Block/);
+  assert.match(hash, /event_kind=tools%2Fcall/);
+  assert.match(go("c-dash-donut", { name: "차단" }), /decision=Block/);
+  assert.equal(go("c-dash-policies", { dataIndex: 0 }), "#/policy?detail_kind=policy&detail_id=P-RATE-001");
+  assert.equal(go("c-dash-servers", { dataIndex: 0 }), "#/servers/docs");
+  assert.match(go("c-dash-people", { dataIndex: 0 }), /person=%ED%99%8D%EA%B8%B8%EB%8F%99/);
+  assert.match(go("c-dash-endpoints", { dataIndex: 0 }), /endpoint=ep-1/);
+  const violations = out.charts["c-dash-violations"]();
+  assert.deepEqual(Array.from(violations.series[0].data), [0, 10]);
+  assert.match(go("c-dash-violations", { dataIndex: 1 }), /since=2026-11-1[34]T\d\d%3A00%3A00\.000Z/);
+  assert.equal(out.charts["c-dash-policies"]().items[0].name, "호출 횟수 상한");
+});
+
+test("대시보드 상태 줄은 정책 엔진 일치와 관제 전달 상태를 조회 결과대로 보이고 실패를 정상으로 숨기지 않는다", async () => {
+  const state = async (extra) => String((await build(true, extra).ROUTES.overview("", "summary")).html.head);
+  const ok = await state({ "/gw/policy/ledger": { policies: [], deployment: { rules_match: true, data_match: true } }, "/gw/audit/siem": { pending: 0, retrying: 0, last_delivered: new Date().toISOString() } });
+  assert.match(ok, /정책 엔진 일치/);
+  assert.match(ok, /관제 전달/);
+  const mismatch = await state({ "/gw/policy/ledger": { policies: [], deployment: { rules_match: true, data_match: false } }, "/gw/audit/siem": { pending: 4, retrying: 1 } });
+  assert.match(mismatch, /정책 엔진 불일치/);
+  assert.match(mismatch, /관제 미전달 4/);
+  const none = await state({ "/gw/audit/siem": { pending: 0, retrying: 0, last_delivered: null } });
+  assert.match(none, /정책 엔진 확인 불가/);
+  assert.match(none, /관제 설정 안 됨/);
+  const failed = await state({ "/gw/audit/siem": new Error("실패"), "/gw/policy/ledger": new Error("실패") });
+  assert.match(failed, /관제 확인 불가/);
+  assert.doesNotMatch(failed, /관제 설정 안 됨|정책 엔진 일치/);
+});
+
+test("대시보드 갱신은 카드와 처리 목록을 바꾸고 검토와 화면 이동을 보존한다", async () => {
   const ui = build();
   await ui.ROUTES.overview("", "summary");
   ui.setCurrent({ page: "overview", query: new URLSearchParams() });
-  ui.responses["/gw/overview"].execution = { tool_calls: 55, blocked: 4 };
+  ui.responses["/gw/overview"].unresolved_execution = 12;
   ui.responses["/gw/overview"].enforcement = "enforce";
   ui.responses["/api/signup-requests?status=pending"] = { requests: [], pending_total: 321 };
   ui.startDashboardRefresh();
   assert.equal(ui.timers.size, 1);
   await ui.refreshDashboard();
-  assert.match(ui.node("#dashboard-kpis").innerHTML, /전체 호출<\/div><div class="value">55/);
-  assert.match(ui.node("#dashboard-registration").innerHTML, /가입 승인<\/span><b class="n">321/);
-  assert.match(ui.node("#dashboard-blocked").innerHTML, /최근 24시간/);
+  assert.match(ui.node("#dashboard-summary").innerHTML, /처리할 일<\/div><div class="value">333/);
+  assert.match(ui.node("#dashboard-summary").innerHTML, /<td>가입 승인<\/td>|<td>실행 여부 확인<\/td><td>12건/);
   assert.match(ui.node("#view .page-head .status").innerHTML, /집행 모드/);
   const reads = ui.calls.length;
   ui.node("#dialog").open = true;
@@ -612,34 +689,34 @@ test("대시보드 갱신은 지표와 등록 건수를 바꾸고 검토와 화�
   ui.node("#dialog").open = false;
   ui.responses["/gw/overview"] = () => { ui.node("#drawer").classList.contains = () => true; return { execution: { tool_calls: 99 } }; };
   await ui.refreshDashboard();
-  assert.doesNotMatch(ui.node("#dashboard-kpis").innerHTML, />99</);
+  assert.doesNotMatch(ui.node("#dashboard-summary").innerHTML, />99</);
   ui.node("#drawer").classList.contains = () => false;
   ui.responses["/gw/overview"] = () => { ui.stopDashboardRefresh(); return { execution: { tool_calls: 99 } }; };
   await ui.refreshDashboard();
   assert.equal(ui.timers.size, 0);
-  assert.doesNotMatch(ui.node("#dashboard-kpis").innerHTML, />99</);
+  assert.doesNotMatch(ui.node("#dashboard-summary").innerHTML, />99</);
 });
 
 test("대시보드 갱신 실패는 기존 값을 유지하고 복구 때 경고를 지운다", async () => {
   const ui = build();
   ui.setCurrent({ page: "overview", query: new URLSearchParams() });
   await ui.refreshDashboard();
-  const previous = ui.node("#dashboard-kpis").innerHTML;
+  const previous = ui.node("#dashboard-summary").innerHTML;
   ui.responses["/gw/overview"] = new Error("offline");
   await ui.refreshDashboard();
-  assert.equal(ui.node("#dashboard-kpis").innerHTML, previous);
+  assert.equal(ui.node("#dashboard-summary").innerHTML, previous);
   assert.match(ui.node("#dashboard-refresh-status").innerHTML, /갱신 실패/);
-  ui.responses["/gw/overview"] = { execution: { tool_calls: 2 }, servers: [] };
+  ui.responses["/gw/overview"] = { execution: {}, servers: [{ id: "a", status: "ERROR" }] };
   await ui.refreshDashboard();
   assert.equal(ui.node("#dashboard-refresh-status").innerHTML, "");
-  assert.match(ui.node("#dashboard-kpis").innerHTML, />2<\/div>/);
+  assert.match(ui.node("#dashboard-summary").innerHTML, /점검 필요 서버<\/div><div class="value">1<small class="of">/);
 });
 
 test("가입 승인 전체 건수는 페이지와 무관하고 대기 필터의 나머지 페이지로 이동한다", async () => {
   const ui = build(true, { "/api/signup-requests?status=pending": { requests: [], pending_total: 321, total: 321, page: 1, page_size: 100 },
     "/api/signup-requests?status=pending&page=2": { requests: [{ id: "older", status: "pending", username: "old-request" }], pending_total: 321, total: 321, page: 2, page_size: 100 } });
   const overview = await ui.ROUTES.overview("", "summary");
-  assert.match(String(overview.html.tabs[0].body), /가입 승인<\/span><b class="n">321/);
+  assert.match(String(overview.html.tabs[0].body), /처리할 일<\/div><div class="value">321<\/div>/);
   const people = await ui.ROUTES.people("", "signups", new URLSearchParams("signup_status=pending&signup_page=2"));
   const tab = people.html.tabs.find((t) => t.key === "signups");
   assert.equal(tab.n, 321);
@@ -1151,27 +1228,28 @@ test("새 신청이 검색보다 먼저이며 직행 값과 첫 필드 포커스
 });
 
 const overviewData = { servers: [], workstations: [], execution: {}, flows: [], series: [], top_policies: [], termination: {} };
-test("승인 및 등록은 이용 동의·엔드포인트 요청·미등록 MCP 건수와 목적지를 보인다", async () => {
+test("처리할 일은 도입 요청·미등록 MCP 건수를 보이고 도구 이용 동의는 관리자 대시보드에 두지 않는다", async () => {
   const ui = build(true, {
-    "/gw/overview": { ...overviewData, pending_approvals: 0, endpoint_requests: 3, workstations: [{ shadow: 2 }, { shadow: 0 }] },
+    "/gw/overview": { ...overviewData, pending_approvals: 0, endpoint_requests: 3, workstations: [{ endpoint_id: "pc-1", shadow: 2 }, { endpoint_id: "pc-2", shadow: 0 }] },
     "/api/consents": { consents: [{ status: "PENDING", server_id: "a" }, { status: "PENDING", server_id: "a" }, { status: "GRANTED", server_id: "b" }] },
   });
   const markup = String((await ui.ROUTES.overview()).html.tabs[0].body);
-  for (const [label, count, href] of [["엔드포인트 도입 요청", 3, "#/intake?t=requests"], ["도구 이용 동의", 1, "#/consent"], ["미등록 MCP 엔드포인트", 1, "#/endpoints?t=shadow"]]) {
-    assert.ok(markup.includes(`href="${href}"><span>${label}</span><b class="n ${count > 0 ? "hot" : ""}">${count}</b>`));
-  }
+  assert.match(markup, /data-href="#\/intake\?t=requests"><td>엔드포인트 도입 요청<\/td><td>3건<\/td>/);
+  assert.match(markup, /href="#\/endpoints\?t=shadow"><div class="label">미적용<\/div><div class="value">1<small class="of">\/ 1<\/small><\/div><div class="foot"><span class="delta">미등록 1 · 미적용 0<\/span>/);
+  assert.doesNotMatch(markup, /도구 이용 동의|#\/consent/);
 });
 
 test("조회 실패와 누락된 대시보드 값은 0건이 되지 않는다", async () => {
-  const ui = build(true, { "/gw/overview": overviewData, "/api/consents": new Error("실패"), "/gw/audit/alerts?limit=6": new Error("실패") });
+  const ui = build(true, { "/gw/overview": overviewData });
+  const real = ui.context.fetch;
+  ui.context.fetch = async (url, options) => url.startsWith("/gw/audit/alerts?") || url.startsWith("/gw/activity/analysis?")
+    ? { ok: false, status: 500, headers: { get: () => null }, json: async () => ({ detail: "실패" }) } : real(url, options);
   const out = (await ui.ROUTES.overview()).html;
   const markup = String(out.tabs[0].body);
-  for (const label of ["도구 이용 동의", "엔드포인트 도입 요청"]) {
-    assert.ok(markup.includes(`<span>${label}</span><b class="n ">—</b>`));
-  }
-  assert.match(markup, /role="alert">조회 실패/);
+  assert.match(markup, /<div class="label">호출<\/div><div class="value">—<\/div>/);
+  assert.match(markup, /<div class="label">차단 비율<\/div><div class="value">—<\/div>/);
+  assert.match(markup, /<div class="label">경보<\/div><div class="value">—<\/div>/);
   assert.doesNotMatch(markup, /경보 없음/);
-  assert.match(String(out.kpis), /24시간 경보<\/div><div class="value">—<\/div>/);
 });
 
 test("사용 기한은 실제 날짜로 계산하고 없거나 잘못된 날짜는 대시로 보인다", () => {
