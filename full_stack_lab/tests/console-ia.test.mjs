@@ -6,7 +6,7 @@ import * as state from "../gateway/app/agent_static/console-state.mjs";
 
 const source = readFileSync(new URL("../gateway/app/agent_static/console.js", import.meta.url), "utf8");
 const service = readFileSync(new URL("../gateway/app/agent_service.py", import.meta.url), "utf8");
-const adminPages = ["overview", "activity", "security", "servers", "people", "endpoints", "policy", "intake", "termination", "consent"];
+const adminPages = ["overview", "activity", "security", "servers", "connections", "people", "endpoints", "policy", "intake", "termination", "consent"];
 const employeePages = ["activity", "consent", "intake"];
 const code = source.slice(0, source.indexOf("document.addEventListener(\"click\", (event) => {")).replace(/^import[\s\S]*?;\r?\n/gm, "");
 
@@ -143,7 +143,7 @@ test("미등록 MCP 조치는 엔드포인트·근거 기록을 보존하고 동
   const ui = build(true);
   const shadow = String(ui.decisionAction({ decision: "Block", policy_id: "MCP-SHADOW-001", device_id: "pc/<1>",
     evidence: { record_kind: "listener", record_id: 73 }, reason: '<script>x</script>' }));
-  assert.match(shadow, /#\/endpoints\?t=shadow/); assert.match(shadow, /endpoint=pc%2F%3C1%3E/); assert.match(shadow, /record_kind=listener/); assert.match(shadow, /record_id=73/);
+  assert.match(shadow, /#\/connections\?t=shadow/); assert.match(shadow, /endpoint=pc%2F%3C1%3E/); assert.match(shadow, /record_kind=listener/); assert.match(shadow, /record_id=73/);
   assert.doesNotMatch(shadow, /<script>/); assert.match(shadow, /사유/); assert.match(shadow, /실행 안 함/);
   for (const admin of [true, false]) {
     const part = String(build(admin).decisionAction({ decision: "Block", policy_id: "PAC-CONSENT-001", server: "files/a", tool: "read x" }));
@@ -237,9 +237,8 @@ test("신청 실패는 입력과 도구 선택을 남기고 해당 필드를 접
 test("엔드포인트 표는 검색·상태 조건으로 좁히고 한 표에 사용자·호스트·상태를 모은다", async () => {
   const ui = build(), q = new URLSearchParams("t=devices&q=kim&state=pending&silent=1");
   ui.setCurrent({ page: "endpoints", arg: "", query: q });
-  const inventory = { ...ui.inventory, agents: [{ endpoint_id: "ep1", hostname: "host-one", owner_name: "직원 이름", managed_state: "pending", local_username: "pc-user", status: "active" }] };
-  ui.responses["/gw/endpoint/inventory?q=kim&state=pending&endpoint=ep1"] = inventory;
-  ui.responses["/gw/endpoint/inventory?classification=shadow,retired-residue&endpoint=ep1"] = ui.inventory;
+  const inventory = { ...ui.inventory, agents: [{ endpoint_id: "ep1", hostname: "host-one", owner_name: "직원 이름", managed_state: "pending", local_username: "pc-user", status: "active", policy_hash: "h", shadow: 2 }] };
+  ui.responses["/gw/endpoint/inventory?q=kim&state=pending"] = inventory;
   ui.responses["/api/integrations"] = { items: [], devices: [
     { endpoint_id: "ep1", hostname: "host-one", account: "pc-user", state: "observed_only", checks: { apparmor_enforcing: true, protected_configs: false } },
   ] };
@@ -258,7 +257,7 @@ test("엔드포인트 표는 검색·상태 조건으로 좁히고 한 표에 �
 test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기록 상세를 함께 연다", async () => {
   const ui = build();
   ui.context.matchMedia = () => ({ matches: false });
-  ui.context.location.hash = "#/endpoints?t=shadow&endpoint=ep1&record_kind=listener&record_id=73&dt=source";
+  ui.context.location.hash = "#/connections?t=shadow&endpoint=ep1&record_kind=listener&record_id=73&dt=source";
   ui.responses["/gw/endpoint/inventory?endpoint=ep1"] = ui.inventory;
   ui.responses["/gw/endpoint/inventory?classification=shadow,retired-residue&endpoint=ep1"] = ui.inventory;
   ui.responses["/gw/endpoint/records/listener/73"] = { id: 73, record_kind: "listener", endpoint_id: "ep1", address: "127.0.0.1", provenance: {} };
@@ -294,7 +293,7 @@ test("브라우저 배포 소스는 개발 주석을 포함하지 않고 만료�
 });
 
 test("관리자는 분리된 관리 메뉴를 순서대로, 직원과 협력사는 개인 이용 메뉴를 본다", () => {
-  assert.doesNotMatch(source, /ROUTES\.connections|\/api\/my-connections|href="#\/connections"/);
+  assert.match(source, /ROUTES\.connections/); assert.doesNotMatch(source, /\/api\/my-connections/);
   const roles = service.slice(service.indexOf("PAGES_BY_ROLE ="), service.indexOf("ROLE_LABELS ="));
   const ids = (role) => [...roles.match(new RegExp(`"${role}": \\(([^)]+)\\)`))[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(ids("admin"), adminPages);
@@ -320,7 +319,7 @@ test("대시보드 호출 승인과 내 계정 이용 동의 배지를 분리한
   const nav = ui.node("#nav").innerHTML;
   assert.match(nav, /href="#\/overview"[^]*?<span class="count">2<\/span>/);
   assert.match(nav, /href="#\/consent"[^]*?<span class="count">2<\/span>/);
-  assert.match(nav, /href="#\/servers"[^]*?<span class="count">4<\/span>/);
+  assert.match(nav, /href="#\/connections"[^]*?<span class="count">4<\/span>/);
   assert.doesNotMatch(nav, /href="#\/coverage"/);
   assert.doesNotMatch(nav, /href="#\/approvals"/);
 });
@@ -328,14 +327,15 @@ test("대시보드 호출 승인과 내 계정 이용 동의 배지를 분리한
 test("옛 주소 네 종류와 세부 탭·필터를 새 위치로 보낸다", () => {
   const ui = build();
   for (const [page, tab, target, nextTab] of [
-    ["overview", "planes", "servers", "items"],
+    ["overview", "planes", "connections", "items"],
     ["overview", "traffic", "activity", "stats"],
     ["audit", "", "activity", "live"], ["audit", "incidents", "security", "incidents"],
     ["audit", "siem", "security", "integration"], ["activity", "events", "activity", "live"], ["activity", "siem", "security", "integration"],
-    ["activity", "incidents", "security", "incidents"], ["coverage", "", "servers", "items"],
-    ["coverage", "devices", "endpoints", "devices"], ["coverage", "shadow", "endpoints", "shadow"],
-    ["coverage", "vendor", "servers", "vendor"], ["sbom-impact", "", "servers", "servers"], ["intake", "impact", "servers", "servers"],
-    ["servers", "shadow", "endpoints", "shadow"],
+    ["activity", "incidents", "security", "incidents"], ["coverage", "", "connections", "items"],
+    ["coverage", "devices", "endpoints", "devices"], ["coverage", "shadow", "connections", "shadow"],
+    ["coverage", "vendor", "connections", "vendor"], ["sbom-impact", "", "servers", "supply"], ["intake", "impact", "servers", "supply"],
+    ["servers", "shadow", "connections", "shadow"], ["servers", "items", "connections", "items"], ["servers", "vendor", "connections", "vendor"],
+    ["endpoints", "shadow", "connections", "shadow"], ["servers", "capabilities", "servers", "tools"],
     ["servers", "contract", "servers", "servers"],
     ["people", "devices", "endpoints", "devices"], ["people", "managed", "endpoints", "managed"],
     ["approvals", "", "overview", "approvals"], ["approvals", "queue", "overview", "approvals"],
@@ -413,8 +413,8 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
 test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승인본 갱신을 유지한다", async () => {
   const ui = build(true, {"/gw/registry": {servers:[{id:"docs",display_name:"Docs",status:"DRIFT",status_reason:"도구 정의 변경",last_seen_at:"2026-11-01T00:00:00Z",lifecycle:"OPERATING"}],tools:[],registrations:{},usage_relationships:[]}});
   const result = await ui.ROUTES.servers("docs", "servers", new URLSearchParams());
-  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["MCP 서버", "도구", "접근 권한", "연결 통제 현황", "기본 기능 및 커넥터"]);
-  assert.match(String(result.html.tabs[0].body), /마지막 확인[^]*도구 정의 변경/);
+  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["서버", "도구·권한", "공급망"]);
+  assert.match(String(result.html.tabs[0].body), /계약 변경/);
   let detail;
   ui.policyDrawer((title, controls, tabs) => { detail = {controls:String(controls),tabs}; });
   result.after(); await new Promise((resolve) => setTimeout(resolve, 0));
@@ -426,7 +426,8 @@ test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승
   assert.doesNotMatch(String(result.html.head), /catalog-refresh|registry-export|connector-policy/);
   assert.match(String(result.html.tabs[0].body), /catalog-refresh[^]*도구 정의 다시 확인[^]*data-registry-export[^]*도입 승인 등록부 내보내기[^]*value="csv"[^]*value="json"/);
   assert.doesNotMatch(String(result.html.tabs[0].body), /connector-policy/);
-  assert.match(String(result.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
+  const links = await ui.ROUTES.connections("", "vendor", new URLSearchParams());
+  assert.match(String(links.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
 });
 
 test("대시보드는 호출 승인 탭에서만 목록을 표시하고 각 관리 작업으로의 이동을 제공한다", async () => {
@@ -490,6 +491,7 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.match(String(overview.html.kpis), /href="#\/servers\?t=items&state=bypass_possible"/);
   const result = await ui.ROUTES.connections("", "items", new URLSearchParams());
   const body = String(result.html.tabs.find((t) => t.key === "items").body);
+  assert.match(String(result.html.kpis), /미적용 PC[^]*게이트웨이 통제[^]*엔드포인트 통제[^]*벤더 통제[^]*관찰 및 미등록[^]*조직 통제 의존/);
   assert.match(body, /연결 유형별 통제 현황[^]*연결 항목 수[^]*연결별 통제 상태/);
   assert.match(body, /id="c-connections-matrix"/);
   let captured;
@@ -499,7 +501,7 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.equal(captured.series[5].data[2], 1);
   assert.equal(captured.series.reduce((sum, s) => sum + s.data.reduce((a, b) => a + b, 0), 0), 2);
   captured.options.onClick({ dataIndex: 2, seriesIndex: 5 });
-  assert.equal(ui.context.location.hash, "#/servers?t=items&class=vendor_native_connector&state=bypass_possible");
+  assert.equal(ui.context.location.hash, "#/connections?t=items&class=vendor_native_connector&state=bypass_possible");
 });
 
 test("호출 승인 전체 건수와 페이지는 요약에 목록을 중복 표시하지 않는다", async () => {
@@ -1016,10 +1018,9 @@ test("MCP 설정 다음 페이지는 사용자 화면의 전체 범위와 서버
   assert.ok(!ui.calls[0].includes("classification")); assert.match(ui.calls[1], /classification=shadow%2Cretired-residue/);
 });
 
-test("전체 설정과 발견 항목의 페이지 커서는 독립적이다", async () => {
+test("미등록 MCP 표의 페이지 커서는 미등록 범위로 이어진다", async () => {
   const ui = build();
-  ui.setCurrent({ page: "endpoints", arg: "", query: new URLSearchParams("full_entries_cursor=&full_entries_cursor=all-2&full_entries_page=1&entries_cursor=&entries_cursor=shadow-2&entries_page=1") });
-  ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=all-2"] = { rows: [], next_cursor: "all-3" };
+  ui.setCurrent({ page: "connections", arg: "", query: new URLSearchParams("entries_cursor=&entries_cursor=shadow-2&entries_page=1") });
   ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=shadow-2&classification=shadow%2Cretired-residue"] = { rows: [], next_cursor: "shadow-3" };
   await ui.ROUTES.connections("", "shadow");
   assert.equal(ui.covPaging.entries.next, "shadow-3");
@@ -1187,7 +1188,7 @@ test("사용 기한은 실제 날짜로 계산하고 없거나 잘못된 날짜�
   for (const value of [null, {}, { valid_until: "invalid" }]) assert.equal(String(ui.validityChip(value)).replace(/<[^>]*>/g, ""), "—");
 });
 
-test("미등록 MCP는 혼합 합계 없이 설정·수신기·차단 건수를 분리한다", async () => {
+test("미등록 MCP는 MCP별로 묶어 PC 수와 조치 버튼을 보이고 필터 결과를 구분한다", async () => {
   const ui = build();
   Object.assign(ui.inventory.pages.entries, { total: 3 });
   ui.inventory.entries = [
