@@ -3,6 +3,7 @@ import { mergeRows, harnessLabel, DECISIONS,
   statusView, dedupeItems, connectorControl, pipelineOf, resourceValues, observationRows, listenerCoverage,
   msText, pctText, LATENCY_STAGE, timingRows, privacyText,
   originLabel, denialClass, provenanceView, countView, pager, denialCount } from "./console-state.mjs";
+import { scanSummary, intakeCards, intakeStages, riskMix, shadowGroups, shadowPcs, seriesRows, impactRows, serverCards, statusMix, blockRate, terminationCards, stageCounts, gradeCounts, caseDone, caseDue, isSilent, endpointCards, managedMix, reportAges, endpointRows, filterEndpoints, userCards, departmentCounts, topBlocked, peopleStats, userRows } from "./screens.mjs";
 import * as charts from "./charts.mjs";
 
 const TOKEN_KEY = "mcp-console-token";

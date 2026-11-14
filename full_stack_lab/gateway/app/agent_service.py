@@ -1238,7 +1238,7 @@ PAGES_BY_ROLE = {
     # MCP를 신청하는 길"이다. 조직 전체의 기록·정책·종료 판정은 관리자 몫이다.
     "partner": ("activity", "consent", "intake"),
     "employee": ("activity", "consent", "intake"),
-    "admin": ("overview", "activity", "security", "servers", "people", "endpoints", "policy", "intake", "termination", "consent"),
+    "admin": ("overview", "activity", "security", "servers", "connections", "people", "endpoints", "policy", "intake", "termination", "consent"),
 }
 ROLE_LABELS = {"partner": "협력업체 직원", "employee": "직원", "admin": "관리자"}
 
@@ -2958,7 +2958,7 @@ async def approve(approval_id: UUID, request: ApprovalWindow | None = None, auth
 # every authorisation decision stays with the Gateway. Only these prefixes pass.
 GATEWAY_PROXY_PREFIXES = ("overview", "latency", "activity", "registry", "health", "termination/", "approvals/",
                           "catalog/", "enforcement", "monitor/", "audit/", "policy/", "endpoint/",
-                          "supply-chain/", "risk-catalog", "lab/", "dispatch-intents", "suspensions", "user-suspensions/")
+                          "supply-chain/", "risk-catalog", "lab/", "dispatch-intents", "suspensions", "user-suspensions/", "ops/")
 # Several Gateway read APIs are open to any authenticated caller; the Console adds
 # the role boundary here so an employee's session cannot read the organisation's
 # registry, policy ledger or endpoint inventory through it.

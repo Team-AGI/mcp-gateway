@@ -241,8 +241,7 @@ test("엔드포인트 검색·상태·선택은 세 표를 같은 ID로 좁히�
   ui.responses["/gw/endpoint/inventory?q=kim&state=pending&endpoint=ep1"] = inventory;
   ui.responses["/gw/endpoint/inventory?classification=shadow,retired-residue&endpoint=ep1"] = ui.inventory;
   ui.responses["/api/integrations"] = { items: [], devices: [
-    { endpoint_id: "ep1", hostname: "host-one", account: "pc-user", state: "observed_only", checks: {} },
-    { endpoint_id: "ep2", hostname: "host-other", account: "other-user", state: "observed_only", checks: {} },
+    { endpoint_id: "ep1", hostname: "host-one", account: "pc-user", state: "observed_only", checks: { apparmor_enforcing: true, protected_configs: false } },
   ] };
   const out = await ui.ROUTES.endpoints("", "devices", q);
   const body = String(out.html.tabs.find((tab) => tab.key === "devices").body);
@@ -268,8 +267,8 @@ test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기
 
 test("종료 목록의 예상·실제 결과와 케이스 근거 링크는 별도 열이다", async () => {
   const ui = build(true, {
-    "/gw/termination/relationships": { relationships: [{ id: "rel1", display_name: "문서 서버", status: "ACTIVE", lifecycle: "OPERATING", latest_case: "case1", readiness: { best_attainable_grade: "T1" } }] },
-    "/gw/termination/cases": { cases: [{ id: "case1", relationship_id: "rel1", display_name: "문서 서버", grade: "T2", status: "ASSESSED" }], summary: {} },
+    "/gw/termination/relationships": { relationships: [{ id: "rel1", server_id: "docs", display_name: "문서 서버", status: "ACTIVE", lifecycle: "OPERATING", latest_case: "case1", readiness: { best_attainable_grade: "T1" } }] },
+    "/gw/termination/cases": { cases: [{ id: "case1", relationship_id: "rel1", display_name: "문서 서버", grade: "T2", status: "ASSESSED", outstanding: 2, opened_at: "2026-11-01T00:00:00Z" }, { id: "case2", display_name: "닫힌 서버", status: "CLOSED", grade: "T1", outstanding: 0 }], summary: { sla_days: 14, open_cases: 1 } },
   });
   const out = await ui.ROUTES.termination();
   for (const tab of out.html.tabs) {
@@ -337,7 +336,7 @@ test("옛 주소 네 종류와 세부 탭·필터를 새 위치로 보낸다", (
     ["approvals", "unsent", "overview", "unsent"], ["activity", "unsent", "overview", "unsent"], ["approvals", "history", "overview", "approvals"],
     ["activity", "approval-history", "overview", "approvals"],
     ["approvals", "consent", "consent", "pending"],
-    ["policy", "capabilities", "servers", "capabilities"],
+    ["policy", "capabilities", "servers", "tools"],
   ]) {
     const at = { page, arg: "", query: new URLSearchParams({ t: tab, q: "a & b", before: "42" }) };
     const out = ui.canonicalRoute(at);
@@ -387,9 +386,9 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
   assert.match(String(consent.tabs[0].body), /확인할 요청 없음/);
   assert.match(String(consent.tabs[1].body), /동의 기록/);
   const servers = await ui.ROUTES.servers("", "servers", new URLSearchParams());
-  assert.deepEqual(Array.from(servers.html.tabs, (item) => item.key), ["servers", "tools", "capabilities", "items", "vendor"]);
+  assert.deepEqual(Array.from(servers.html.tabs, (item) => item.key), ["servers", "tools", "supply"]);
   assert.doesNotMatch(String(servers.html.head), /통제 범위/);
-  assert.match(String(servers.html.head), /AI 연결 관리/);
+  assert.match(String(servers.html.head), /MCP 서버/);
   assert.equal(ui.ROUTES.coverage, undefined);
   const people = await ui.ROUTES.endpoints("", "devices");
   const devices = people.html.tabs.find((item) => item.key === "devices");
@@ -410,9 +409,11 @@ test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승
   assert.match(String(result.html.tabs[0].body), /마지막 확인[^]*도구 정의 변경/);
   let detail;
   ui.policyDrawer((title, controls, tabs) => { detail = {controls:String(controls),tabs}; });
-  result.after();
+  result.after(); await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(detail.controls, /approve-contract[^]*승인본 갱신/);
   assert.match(detail.controls, /도구 정의 변경/);
+  assert.match(detail.controls, /긴급 중지/); assert.doesNotMatch(detail.controls, /server-deregister|위치 심사|등록 해제/);
+  assert.deepEqual(Array.from(detail.tabs, (t) => t.label), ["개요", "도구·범위", "사용 대상", "호출 추이", "종료·폐기"]);
   assert.match(String(detail.tabs[0].body), /마지막 확인/);
   assert.doesNotMatch(String(result.html.head), /catalog-refresh|registry-export|connector-policy/);
   assert.match(String(result.html.tabs[0].body), /catalog-refresh[^]*도구 정의 다시 확인[^]*data-registry-export[^]*도입 승인 등록부 내보내기[^]*value="csv"[^]*value="json"/);
@@ -789,7 +790,7 @@ test("종료 조치 필터와 페이지 이동을 서버에 전달하고 기한 
   const result = await ui.ROUTES.termination("", "cases", new URLSearchParams("attention=required&page=2"));
   const cases = result.html.tabs.find((t) => t.key === "cases");
   assert.equal(cases.n, 101);
-  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["종료 대상", "종료 처리"]);
+  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["종료 처리"]);
   assert.match(String(cases.body), /종료 조치 필요/);
   assert.match(String(cases.body), /attention=required&amp;page=1/);
   assert.match(String(cases.body), /attention=required&amp;page=3/);
@@ -871,7 +872,7 @@ test("접근 권한은 AI 연결 관리에서만 조회하고 정책은 기존 �
   assert.equal(access.label, "접근 권한");
   assert.equal(access.n, 2);
   assert.match(String(access.body), /permission-1[^]*alice[^]*docs[^]*\/docs[^]*read_file/);
-  assert.match(String(access.body), /권한 출처[^]*허용 행위[^]*허용 자원[^]*허용 도구/);
+  assert.match(String(access.body), /출처[^]*허용 행위[^]*허용 자원[^]*허용 도구/);
   assert.match(String(access.body), /개별 접근 권한[^]*docs: 읽기[^]*public.products[^]*도입 승인/);
   assert.doesNotMatch(String(access.body), /쓰기/);
   ui.calls.length = 0;
@@ -1034,7 +1035,7 @@ test("도입 신청은 역할별 탭 순서와 기본 탭을 적용하고 직접
   for (const admin of [true, false]) {
     const ui = build(admin);
     const out = await ui.ROUTES.intake("", "");
-    const order = admin ? ["list", "requests", "new", "approved"] : ["approved", "new", "list"];
+    const order = admin ? ["review", "list", "requests", "new"] : ["approved", "new", "list"];
     assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), order);
     assert.equal(out.html.active, order[0]);
     const selected = await ui.ROUTES.intake("", "new");

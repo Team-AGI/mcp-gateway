@@ -344,6 +344,21 @@ async def ops_status(_: dict = Depends(admin_caller)) -> dict:
             "disposal": await db.fetch_one("SELECT * FROM worker_heartbeats WHERE worker='disposal'")}
 
 
+class OpsSuspend(StrictModel):
+    reason: str = Field(min_length=4, max_length=500)
+
+
+@app.post("/api/ops/servers/{server_id}/suspend")
+async def ops_suspend(server_id: str, request: OpsSuspend, user: dict = Depends(admin_caller)) -> dict:
+    try:
+        stopped = await ops_response.suspend(server_id, "operator", request.reason, {"requested_by": user["principal"]})
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if not stopped:
+        raise HTTPException(409, "이미 중지된 서버입니다.")
+    return {"server_id": server_id, "status": "DISABLED"}
+
+
 @app.post("/api/ops/servers/{server_id}/resume")
 async def ops_resume(server_id: str, request: OpsResume, user: dict = Depends(admin_caller)) -> dict:
     try:
@@ -1876,6 +1891,19 @@ async def endpoint_managed_activate(endpoint_id: str, request: ManagedActivation
                                     user: dict = Depends(admin_caller)) -> dict:
     try:
         return await endpoint_plane.activate_managed(endpoint_id, user["principal"], request.policy_hash, request.note)
+    except (ValueError, PermissionError) as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+class ManagedQuarantine(StrictModel):
+    note: str = Field(min_length=4, max_length=1000)
+
+
+@app.post("/api/endpoint/devices/{endpoint_id}/quarantine")
+async def endpoint_managed_quarantine(endpoint_id: str, request: ManagedQuarantine,
+                                      user: dict = Depends(admin_caller)) -> dict:
+    try:
+        return await endpoint_plane.quarantine_managed(endpoint_id, user["principal"], request.note)
     except (ValueError, PermissionError) as exc:
         raise HTTPException(409, str(exc)) from exc
 
