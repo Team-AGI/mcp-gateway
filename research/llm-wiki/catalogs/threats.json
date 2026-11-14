@@ -35,10 +35,10 @@
       },
       {
         "path": "full_stack_lab/gateway/app/agent_service.py",
-        "sha256": "4a2c63e5aee67b96b71463697982bd631994149e4c2af261860e23fa6d5d4431",
-        "committed_sha256": "7a884d44510cc7bb6881bc7abe737f02d316d9b62119e82881aef28417042f15",
-        "normalized_sha256": "4a2c63e5aee67b96b71463697982bd631994149e4c2af261860e23fa6d5d4431",
-        "worktree_modified": true
+        "sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "committed_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "normalized_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "worktree_modified": false
       }
     ],
     "control_locations": [
@@ -155,10 +155,10 @@
     "code_candidates": [
       {
         "path": "full_stack_lab/gateway/app/agent_service.py",
-        "sha256": "4a2c63e5aee67b96b71463697982bd631994149e4c2af261860e23fa6d5d4431",
-        "committed_sha256": "7a884d44510cc7bb6881bc7abe737f02d316d9b62119e82881aef28417042f15",
-        "normalized_sha256": "4a2c63e5aee67b96b71463697982bd631994149e4c2af261860e23fa6d5d4431",
-        "worktree_modified": true
+        "sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "committed_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "normalized_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "worktree_modified": false
       },
       {
         "path": "full_stack_lab/gateway/app/review.py",
@@ -802,9 +802,9 @@
       {
         "path": "full_stack_lab/gateway/app/endpoint_plane.py",
         "sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
-        "committed_sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
+        "committed_sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
         "normalized_sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
-        "worktree_modified": true
+        "worktree_modified": false
       }
     ],
     "control_locations": [

@@ -1,8 +1,8 @@
 # 저장소 코드 스냅샷
 
-확인 시각: 2026-11-14T18:20:28+09:00
+확인 시각: 2026-11-14T19:05:13+09:00
 
-HEAD: `47c91a731389ac36fd6685b1b148b6586c6c7636` · 로컬 브랜치: `console-redesign`
+HEAD: `1cf50205ae922b0f7905250b96e1c48b5332da07` · 로컬 브랜치: `console-redesign`
 
 로컬 코드 상태입니다. 배포·활성화·실기기 검증과 실험 성공을 증명하지 않습니다.
 
@@ -24,25 +24,6 @@ M .github/actions/compose-cache/index.cjs
  M full_stack_lab/field/console/file.caddy
  M full_stack_lab/field/console/none.caddy
  M full_stack_lab/field/console/tailscale.caddy
-UU full_stack_lab/gateway/app/agent_service.py
-M  full_stack_lab/gateway/app/agent_static/console-state.mjs
-UU full_stack_lab/gateway/app/agent_static/console.css
-UU full_stack_lab/gateway/app/agent_static/console.js
-UU full_stack_lab/gateway/app/agent_static/i18n-en.mjs
-A  full_stack_lab/gateway/app/agent_static/screens.mjs
-M  full_stack_lab/gateway/app/endpoint_plane.py
-M  full_stack_lab/gateway/app/main.py
-M  full_stack_lab/tests/approved-mcp-console.test.mjs
-UU full_stack_lab/tests/console-ia.test.mjs
-M  full_stack_lab/tests/dev73_review2_check.py
-M  full_stack_lab/tests/intake_d189_ui_check.mjs
-M  full_stack_lab/tests/intake_one_click_ui_check.mjs
-M  full_stack_lab/tests/local_run_presets_check.py
-M  full_stack_lab/tests/notion-bugs-ui.test.mjs
-M  full_stack_lab/tests/people-pages.test.mjs
-M  full_stack_lab/tests/sbom_impact_check.py
-A  full_stack_lab/tests/screens.test.mjs
-UU full_stack_lab/tests/user_credential_check.py
  M research/collaboration-console/install-autostart.ps1
  M research/collaboration-console/run-console.ps1
  M research/collaboration-console/uninstall-autostart.ps1
