@@ -1234,11 +1234,11 @@ async def gateway_proxy(path: str, authorization: str | None, method: str = "GET
 # 역할이 볼 수 있는 화면. 숨기기만 하는 메뉴는 통제가 아니라 장식이므로
 # /api/console이 이 목록을 기준으로 데이터 자체를 빼고 응답한다.
 PAGES_BY_ROLE = {
-    # 직원·협력사 직원에게 필요한 것은 "내 호출이 어떻게 판정됐는가"와 "쓰고 싶은
-    # MCP를 신청하는 길"이다. 조직 전체의 기록·정책·종료 판정은 관리자 몫이다.
-    "partner": ("activity", "consent", "intake"),
-    "employee": ("activity", "consent", "intake"),
-    "admin": ("overview", "activity", "security", "servers", "people", "endpoints", "policy", "intake", "termination", "consent"),
+    # 직원·협력사 직원에게 필요한 것은 "쓸 수 있는 MCP와 내 동의·신청"과 "내 호출이 어떻게
+    # 판정됐는가"다. 조직 전체의 기록·정책·종료 판정은 관리자 몫이다.
+    "partner": ("my", "activity"),
+    "employee": ("my", "activity"),
+    "admin": ("overview", "inbox", "activity", "intake", "servers", "connections", "termination", "people", "endpoints", "policy", "my"),
 }
 ROLE_LABELS = {"partner": "협력업체 직원", "employee": "직원", "admin": "관리자"}
 
