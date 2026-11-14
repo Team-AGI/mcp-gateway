@@ -712,7 +712,8 @@ test("승인 상세에서만 실행 버튼을 제공하고 본인 요청과 취�
   assert.deepEqual(Array.from(detail.tabs, (t) => t.key), ["request", "args", "policy"]);
   ui.approvalActions(async (options) => { asked = options; return null; });
   await ui.ACTIONS.approve({ dataset: { id: "other" } });
-  assert.equal(asked.confirm, "승인·실행");
+  assert.equal(asked.confirm, "승인");
+  assert.match(String(asked.fields), /name="window_minutes"/);
   assert.ok(!ui.calls.includes("/approvals/other/approve"));
   ui.approvalActions(async () => new Map());
   await ui.ACTIONS.approve({ dataset: { id: "own" } });
@@ -760,7 +761,7 @@ test("중대 영향 호출은 상세 검토와 기존 증빙 확인을 거쳐 �
   assert.match(String(asked.fields), /name="confirmed" required/);
   const request = ui.requests.find((r) => r.url === "/gw/approvals/impact/approve");
   assert.equal(request.method, "POST");
-  assert.deepEqual(JSON.parse(request.body), { evidence_sha256: "evidence-proof", reason: "scope_confirmed" });
+  assert.deepEqual(JSON.parse(request.body), { evidence_sha256: "evidence-proof", reason: "scope_confirmed", window_minutes: 30 });
 });
 
 test("승인 목록 갱신 실패를 빈 목록으로 숨기지 않고 복구하며 빈 마지막 페이지를 되돌린다", async () => {

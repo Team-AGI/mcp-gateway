@@ -8,7 +8,7 @@
 
 **한국어** · [English](README.en.md)
 
-![판본](https://img.shields.io/badge/판본-1.0.3-1f4287)
+![판본](https://img.shields.io/badge/판본-1.0.4-1f4287)
 ![MCP](https://img.shields.io/badge/MCP-2025--11--25-1f4287)
 ![Docker](https://img.shields.io/badge/배포-Docker%20Compose-2496ED?logo=docker&logoColor=white)
 
@@ -54,7 +54,7 @@ MINT는 직원 PC의 AI 코딩 에이전트(Claude Code·Codex CLI)가 쓰는 MC
 ## 빠른 설치
 
 ```bash
-git clone --branch v1.0.3 https://github.com/MCP-governance/mint.git
+git clone --branch v1.0.4 https://github.com/MCP-governance/mint.git
 cd mint/deploy
 ./install.sh --bind <사내 IPv4>
 ```

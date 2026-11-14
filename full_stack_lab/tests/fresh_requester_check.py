@@ -45,6 +45,13 @@ def production(filename, names, namespace):
 
 digest = production("contract.py", {"canonical_hash"}, {"json": json, "hashlib": hashlib}).canonical_hash
 
+def _high_impact():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("high_impact_unit", APP / "high_impact.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 class FreshRequesterChecks(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -69,7 +76,8 @@ class FreshRequesterChecks(unittest.IsolatedAsyncioTestCase):
         self.tool = {"name": "update", "enabled": True, "input_schema": self.view["input_schema"],
                      "approved_description_hash": digest(self.view["description"]),
                      "approved_schema_hash": digest(self.view["input_schema"]), "approved_server_version": "pinned"}
-        self.db = NS(fetch_one=AsyncMock(side_effect=self.fetch), fetch_all=AsyncMock(return_value=[self.tool]),
+        self.db = NS(fetch_one=AsyncMock(side_effect=self.fetch),
+                     fetch_all=AsyncMock(side_effect=lambda query, params=(): [self.row] if "approvals" in query else [self.tool]),
                      execute=AsyncMock(return_value=1))
         self.connection = NS(execute=AsyncMock(side_effect=self.claim_approval))
 
@@ -150,8 +158,11 @@ class FreshRequesterChecks(unittest.IsolatedAsyncioTestCase):
             "_inspected_result": AsyncMock(return_value=({"content": [], "is_error": False}, [])),
             "response_evidence": lambda *args: {}, "refresh_catalog": AsyncMock(),
             "_root_cause": lambda exc: type(exc).__name__, "MAX_ARGUMENT_BYTES": 10000,
-            "RESERVATION_TTL_SECONDS": 120, "OUTPUT_INSPECTION_TIMEOUT_SECONDS": 10}
-        names = {"approve_request", "execute_call", "_call_upstream", "_decision_payload", "local_verdict", "_Laps", "DispatchRejected"}
+            "RESERVATION_TTL_SECONDS": 120, "OUTPUT_INSPECTION_TIMEOUT_SECONDS": 10,
+            "high_impact": _high_impact(), "APPROVAL_WINDOWS": (0, 10, 30), "APPROVAL_WINDOW_DEFAULT": 30,
+            "APPROVAL_ONE_USE_MINUTES": 10, "logging": __import__("logging")}
+        names = {"approve_request", "execute_call", "_call_upstream", "_decision_payload", "local_verdict", "_Laps",
+                 "DispatchRejected", "_open_grant"}
         if GATEWAY:
             from app import endpoint_plane
             self.stack = ExitStack()
@@ -193,7 +204,8 @@ class FreshRequesterChecks(unittest.IsolatedAsyncioTestCase):
 
     async def claim_approval(self, query, params=()):
         self.assertIn("status='APPROVED'", query)
-        self.row["status"] = "APPROVED"
+        self.row.update(status="APPROVED", valid_until=self.now + timedelta(minutes=10), window_minutes=None, uses=0,
+                        reviewed_at=self.now)
         return NS(fetchone=AsyncMock(return_value=self.row))
 
     async def approved(self, *args, **kwargs):
@@ -207,16 +219,22 @@ class FreshRequesterChecks(unittest.IsolatedAsyncioTestCase):
             "PAC-04", "Block", "unit: invalid transport identity")
 
     async def run_approval(self):
+        """11-14: approval opens a one-use approval; the requester's own retry is the call that runs."""
         original = deepcopy(self.payload)
-        result = await self.core.approve_request("approval", "admin")
+        granted = await self.core.approve_request("approval", "admin", window_minutes=0)
+        self.assertEqual(granted["status"], "APPROVED")
+        self.ledger.assert_not_awaited()
+        self.client.call_tool.assert_not_awaited()
+        result = await self.core.execute_call(deepcopy(self.payload))
         self.assertEqual(self.payload, original)
         self.ledger.assert_awaited_once()
         event = self.ledger.await_args.args[0]
         self.assertEqual((event["decision"], event["policy_id"]), (result["decision"], result["policy_id"]))
-        self.assertEqual(event["approval_id"], "approval")
+        if self.person["status"] == "active":  # a disabled requester is refused before any approval is looked up
+            self.assertEqual(event["approval_id"], "approval")
         self.assertEqual(event["user_token"], "employee")
-        self.assertEqual(self.db.execute.await_args.args[1], (
-            "EXECUTED" if result["upstream_executed"] else "NOT_EXECUTED", 91, "approval"))
+        if result["upstream_executed"]:
+            self.assertEqual(self.db.execute.await_args.args[1], (91, "approval"))
         return result
 
     async def blocked(self, policy):

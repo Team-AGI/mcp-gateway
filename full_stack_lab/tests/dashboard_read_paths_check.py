@@ -91,11 +91,13 @@ class ReadPathsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_all_unresolved_intents_are_reachable_beyond_two_hundred(self):
         for i in range(305):
-            self.conn.execute("INSERT INTO dispatch_intents VALUES (?, 'alice', 'docs', 'read', 'r', ?, NULL, 'uncertain')",
+            self.conn.execute("INSERT INTO dispatch_intents VALUES (?, 'alice', 'docs', 'write', 'w', ?, NULL, 'uncertain')",
                               (f"request-{i:03}", (NOW + timedelta(seconds=i)).isoformat()))
         self.conn.execute("INSERT INTO dispatch_intents VALUES ('resolved', 'alice', 'docs', 'read', 'r', ?, NULL, 'confirmed_executed')", (NOW.isoformat(),))
         self.conn.execute("INSERT INTO dispatch_intents VALUES ('running', 'alice', 'docs', 'read', 'r', ?, NULL, 'pending')", (NOW.isoformat(),))
         self.conn.execute("INSERT INTO call_reservations VALUES ('running', NULL, ?)", ((NOW + timedelta(minutes=1)).isoformat(),))
+        # An unanswered read can simply be retried; nobody is asked to confirm it (11-14).
+        self.conn.execute("INSERT INTO dispatch_intents VALUES ('orphan-read', 'alice', 'docs', 'read', 'r', ?, NULL, 'pending')", (NOW.isoformat(),))
         first = await self.intents()
         second = await self.intents(page=2)
         self.assertEqual((first["total"], len(first["rows"]), len(second["rows"])), (305, 200, 105))
@@ -103,6 +105,7 @@ class ReadPathsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ids), 305)
         self.assertNotIn("running", ids)
         self.assertNotIn("resolved", ids)
+        self.assertNotIn("orphan-read", ids)
         self.assertIn("request-000", {r["request_id"] for r in second["rows"]})
         self.conn.execute("UPDATE dispatch_intents SET state='confirmed_executed' WHERE request_id <> 'request-000'")
         shrunk = await self.intents(page=2)

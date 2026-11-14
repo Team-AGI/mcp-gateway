@@ -170,11 +170,19 @@ async def approval_reuse():
     CHECKS.ok("an instruction marker in a write asks for approval", pending["decision"] == "Approval" and pending.get("approval_id"),
               decision=pending["decision"], policy=pending["policy_id"])
     approval = pending["approval_id"]
-    results = await asyncio.gather(*[core.approve_request(approval, "acceptance-admin") for _ in range(6)], return_exceptions=True)
+    results = await asyncio.gather(*[core.approve_request(approval, "acceptance-admin", window_minutes=0) for _ in range(6)],
+                                   return_exceptions=True)
     wins = [r for r in results if isinstance(r, dict)]
-    CHECKS.ok("six approvers race for one approval: one executes the call", len(wins) == 1 and wins[0]["upstream_executed"],
+    CHECKS.ok("six approvers race for one approval: one approves, nothing runs on the approver's click",
+              len(wins) == 1 and wins[0]["status"] == "APPROVED" and not wins[0].get("upstream_executed"),
               errors=[str(r)[:60] for r in results if not isinstance(r, dict)])
     CHECKS.ok("six approvers race for one approval: the other five are refused", sum(isinstance(r, ValueError) for r in results) == 5)
+    CHECKS.ok("approval alone has no downstream effect", len(await issues(title)) == 0)
+    retried = await call("boundary-e5", title, body=marker)
+    again = await call("boundary-e5", title, body=marker)
+    CHECKS.ok("the requester's retry runs under the one-use approval", retried["upstream_executed"] and retried.get("approval_id") == approval,
+              decision=retried["decision"], policy=retried["policy_id"])
+    CHECKS.ok("the one-use approval is spent by that retry", not again["upstream_executed"], decision=again["decision"], policy=again["policy_id"])
     CHECKS.ok("one approval, one effect downstream", len(await issues(title)) == 1)
     status = await db.fetch_one("SELECT status FROM approvals WHERE id=%s", (approval,))
     CHECKS.ok("the approval ends executed", status["status"] == "EXECUTED", status=status["status"])
@@ -213,6 +221,16 @@ async def approval_reuse():
               all(not o.get("upstream_attempted") and not o["upstream_executed"] for o in outcomes.values()),
               outcomes={name: summary([o])[0] for name, o in outcomes.items()})
     CHECKS.ok("and the downstream took nothing from any variant", len(await issues(title3)) == 0)
+
+    # A 30-minute approval covers the requester's other calls to the same tool for the same reason (11-14).
+    title4 = f"approval-window-{uuid.uuid4().hex[:8]}"
+    pending = await call("boundary-e5", title4, body=marker)
+    await core.approve_request(pending["approval_id"], "acceptance-admin", window_minutes=30)
+    runs = [await call("boundary-e5", f"{title4}-{i}", body=marker) for i in range(2)]
+    CHECKS.ok("a period approval runs later calls with other arguments", all(r["upstream_executed"] for r in runs),
+              outcomes=summary(runs))
+    row = await db.fetch_one("SELECT uses, status FROM approvals WHERE id=%s", (pending["approval_id"],))
+    CHECKS.ok("a period approval counts its uses and stays open", row["uses"] == 2 and row["status"] == "APPROVED", row=dict(row))
     status = await db.fetch_one("SELECT status FROM approvals WHERE id=%s", (approval,))
     CHECKS.ok("the refused variants did not consume the approval", status["status"] == "APPROVED", status=status["status"])
 
