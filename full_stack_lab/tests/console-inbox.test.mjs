@@ -154,6 +154,15 @@ test("가입·기기·실행 확인·엔드포인트 요청·경보 서랍은 �
   assert.deepEqual(seen, [12, 11]);
 });
 
+test("시각이 없는 항목은 대기 시간을 지어내지 않고 평균·최장에서 뺀다", async () => {
+  const { c } = context({ responses: { "/gw/endpoint/inventory": { agents: [{ endpoint_id: "pc-9", hostname: "host-9", managed_state: "pending", policy_hash: "h", status: "active" }] },
+    "/approvals": { approvals: [], history: [], total: 0, page_size: 30 }, "/api/mcp-requests": { requests: [] }, "/gw/endpoint/requests": { requests: [] },
+    "/gw/dispatch-intents": { rows: [] }, "/api/signup-requests?status=pending": { requests: [] }, alerts: { alerts: [] } } });
+  const out = await markup(c);
+  assert.match(out, /대기:1/); assert.match(out, /평균 대기:—/); assert.match(out, /가장 오래된 대기:—/);
+  assert.match(out, /<td class="num nowrap " title="[^"]*">—<\/td>/);
+});
+
 test("도입 신청 행은 서랍 없이 도입 심사 상세 주소로 이동한다", async () => {
   const out = await markup(context().c);
   assert.match(out, /data-act="goto" data-href="#\/intake\/9"/);

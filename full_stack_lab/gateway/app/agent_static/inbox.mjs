@@ -1,3 +1,4 @@
+let loaded = [];
 const KINDS = [
   ["approval", "호출 승인"], ["intake", "도입 신청"], ["endpoint", "엔드포인트 요청"],
   ["people", "가입·기기"], ["execution", "실행 확인"], ["alert", "경보"],
@@ -93,7 +94,7 @@ const waitCell = (c, item) => {
   const now = Date.now();
   const over = item.expires && stamp(item.expires) <= now;
   const age = now - stamp(item.at);
-  const tone = over ? "wait-over" : age >= 4 * HOUR ? "wait-warn" : age < HOUR ? "wait-calm" : "";
+  const tone = !item.at ? "" : over ? "wait-over" : age >= 4 * HOUR ? "wait-warn" : age < HOUR ? "wait-calm" : "";
   return c.html`<td class="num nowrap ${tone}" title="${c.when(item.at)}">${item.at ? waitText(age) : "—"}</td>`;
 };
 
@@ -108,7 +109,8 @@ const row = (c, item) => {
     <td class="chev" aria-hidden="true">›</td></tr>`;
 };
 
-const average = (items) => (items.length ? items.reduce((sum, item) => sum + (Date.now() - stamp(item.at)), 0) / items.length : 0);
+const dated = (items) => items.filter((item) => item.at);
+const average = (items) => (dated(items).length ? dated(items).reduce((sum, item) => sum + (Date.now() - stamp(item.at)), 0) / dated(items).length : 0);
 
 export async function inboxRoute(c, query) {
   const filter = KINDS.some(([key]) => key === query.get("f")) ? query.get("f") : "";
@@ -116,7 +118,7 @@ export async function inboxRoute(c, query) {
   const { items, failed } = await loadInbox(c);
   const counts = Object.fromEntries(KINDS.map(([key]) => [key, items.filter((item) => item.kind === key).length]));
   const shown = filter ? items.filter((item) => item.kind === filter) : items;
-  const oldest = items.length ? waitText(Date.now() - Math.min(...items.map((item) => stamp(item.at)))) : "—";
+  const oldest = dated(items).length ? waitText(Date.now() - Math.min(...dated(items).map((item) => stamp(item.at)))) : "—";
   const chips = c.html`<nav class="feed-toolbar row-actions inbox-filters" aria-label="유형">
     <a class="btn sm" href="#/inbox" ${filter || history ? "" : c.raw('aria-current="true"')}>전체 <b class="n">${items.length}</b></a>
     ${KINDS.map(([key, label]) => c.html`<a class="btn sm" href="#/inbox?f=${key}" ${filter === key && !history ? c.raw('aria-current="true"') : ""}>${label} <b class="n ${counts[key] ? "" : "zero"}">${counts[key]}</b></a>`)}
@@ -124,7 +126,7 @@ export async function inboxRoute(c, query) {
   const table = shown.length ? c.html`<table class="data rows-32 inbox-table"><thead><tr><th>유형</th><th>요약</th><th>요청자</th>
     <th class="num">대기</th><th class="num">만료</th><th></th></tr></thead><tbody>${shown.map((item) => row(c, item))}</tbody></table>`
     : c.empty("처리할 일 없음", { filtered: Boolean(filter) });
-  const kpis = c.kpiStrip([["대기", items.length, items.length ? "approval" : ""], ["평균 대기", items.length ? waitText(average(items)) : "—"],
+  const kpis = c.kpiStrip([["대기", items.length, items.length ? "approval" : ""], ["평균 대기", dated(items).length ? waitText(average(items)) : "—"],
     ["가장 오래된 대기", oldest]]);
   const status = failed.size ? c.chip("alert", `조회 실패 ${[...failed].map((key) => KIND_LABEL[key] || key).join(", ")}`) : "";
   loaded = items;
@@ -136,8 +138,6 @@ export async function inboxRoute(c, query) {
       { onClick: (event) => { location.hash = `#/inbox?f=${KINDS[event.dataIndex][0]}`; } }) },
   };
 }
-
-let loaded = [];
 
 const recentCalls = (c, rows) => (rows?.length ? c.html`<table class="data rows-32"><thead><tr><th>시각</th><th>판정</th><th>도구</th></tr></thead><tbody>
   ${rows.map((r) => c.html`<tr><td class="nowrap">${c.when(r.at)}</td><td>${c.decisionChip(r.decision)}</td><td class="cut"><code>${r.server}.${r.tool}</code></td></tr>`)}
