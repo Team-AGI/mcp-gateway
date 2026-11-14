@@ -4,12 +4,13 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { makeTranslator } from "../gateway/app/agent_static/i18n.mjs";
 import { EN } from "../gateway/app/agent_static/i18n-en.mjs";
+import * as dash from "../gateway/app/agent_static/dash.mjs";
 
 const source = readFileSync(new URL("../gateway/app/agent_static/console.js", import.meta.url), "utf8");
 const safe = source.slice(source.indexOf("class Raw {"), source.indexOf("function detailText("));
 const table = source.slice(source.indexOf("function approvedMcpTable("), source.indexOf("ROUTES.intake ="));
 const ui = runInNewContext(`${safe}
-const when = (v) => v || "—", viewer = {kit: true}, location = {origin:"https://console.example"};
+const when = (v) => v || "—", NONE = "—", viewer = {kit: true}, location = {origin:"https://console.example"};
 const ACTION = {r:"읽기",w:"쓰기",x:"외부전송 및 실행"};
 const empty = (v) => html\`<div>\${v}</div>\`;
 const chip = (_, label) => html\`<span>\${label}</span>\`;
@@ -17,7 +18,7 @@ const kv = (pairs) => html\`<dl>\${pairs.map(([k,v]) => html\`<dt>\${k}</dt><dd>
 let drawer;
 const openDrawer = (title,controls,tabs) => {drawer={title,controls,tabs};};
 ${table}
-({render:approvedMcpTable, show(server){showAvailableMcp(server);return drawer;}, address:approvedMcpAddress});`, {URL});
+({render:approvedMcpTable, show(server){showAvailableMcp(server);return drawer;}, address:approvedMcpAddress});`, {URL, ...dash});
 const render = ui.render;
 const row = {server_id:"notes",display_name:"Notes",purpose:"문서 검색",source_url:"https://github.com/example/notes",
   commit_sha:"a".repeat(40),valid_until:"2027-01-01T00:00:00+00:00",execution:"pc",source_available:true,connection_url:"/mcp/notes/",
@@ -25,7 +26,7 @@ const row = {server_id:"notes",display_name:"Notes",purpose:"문서 검색",sour
 
 test("available MCP list prioritizes purpose, tools, expiry and usage over technical provenance", () => {
   const result = String(render([row]));
-  for (const value of ["사용 목적","제공 도구","사용 기한","이용 방법",row.purpose,row.valid_until]) assert.ok(result.includes(value), value);
+  for (const value of ["사용 목적","제공 도구","사용 기한","이용 방법",row.purpose,"1월 1일","1개"]) assert.ok(result.includes(value), value);
   for (const value of ["고정 커밋",row.commit_sha,row.source_url,"mcp-source-download"]) assert.ok(!result.includes(value), value);
   assert.ok(result.includes('data-act="available-mcp"'));
   const filtered = String(render([row], "missing"));

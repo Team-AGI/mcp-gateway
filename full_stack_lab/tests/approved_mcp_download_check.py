@@ -274,7 +274,7 @@ class DownloadTests(unittest.IsolatedAsyncioTestCase):
         result = await self.scope["list_approved_mcp"](USER)
         row = result["servers"][0]
         self.assertEqual(row["purpose"], "문서 검색")
-        self.assertEqual(row["tools"], [{"name": "search", "action": "r", "purpose": "문서 조회", "scope_reviewed": True}])
+        self.assertEqual(row["tools"], [{"name": "search", "action": "r", "purpose": "문서 조회", "scope_reviewed": True, "consent": False}])
         self.assertNotIn("excluded", str(result))
         self.allowed = ["other"]
         self.assertEqual((await self.scope["list_approved_mcp"](USER))["servers"], [])

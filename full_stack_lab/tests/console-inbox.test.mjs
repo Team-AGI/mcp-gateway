@@ -78,8 +78,8 @@ test("처리함은 여섯 갈래의 대기를 오래된 것부터 한 표에 모
   assert.ok(!items.some((i) => i.summary === "등록됨" || i.summary === "거부됨" || i.summary === "done" || i.summary === "host-2" || i.summary === "host-3"));
   const out = await markup(c);
   for (const label of ["호출 승인", "도입 신청", "엔드포인트 요청", "가입·기기", "실행 확인", "경보", "처리 이력"]) assert.match(out, new RegExp(label));
-  assert.match(out, /<th>유형<\/th><th>요약<\/th><th>요청자<\/th>\s*<th class="num">대기<\/th><th class="num">만료<\/th>/);
-  assert.match(out, /대기:9/); assert.match(out, /평균 대기:/); assert.match(out, /가장 오래된 대기:1일/);
+  assert.match(out, /<th>유형<\/th><th>요약<\/th><th>대상<\/th>\s*<th class="num">대기<\/th><th class="num">만료<\/th>/);
+  assert.match(out, /처리할 일:9/); assert.match(out, /경보:2그룹 · 발생 3건/); assert.match(out, /평균 대기:/); assert.match(out, /가장 오래된 대기:1일/);
   assert.doesNotMatch(out, /<div class="tabs"|role="tab"/);
 });
 
@@ -89,7 +89,7 @@ test("유형 칩은 건수를 보이고 선택한 유형만 표에 남기며 본
   assert.match(all, /호출 승인 <b class="n ">2<\/b>/); assert.match(all, /가입·기기 <b class="n ">2<\/b>/); assert.match(all, /경보 <b class="n ">2<\/b>/);
   assert.match(all, /본인 요청/);
   const only = await markup(c, "f=people");
-  assert.equal((only.match(/data-act="inbox-open"/g) || []).length, 2);
+  assert.equal((only.match(/<tr class="clickable"[^>]*data-act="inbox-open"/g) || []).length, 2);
   assert.doesNotMatch(only, /files\.write/);
   const none = await markup(context({ responses: { "/gw/dispatch-intents": { rows: [] } } }).c, "f=execution");
   assert.match(none, /조건에 맞는 결과 없음/);
@@ -159,7 +159,7 @@ test("시각이 없는 항목은 대기 시간을 지어내지 않고 평균·�
     "/approvals": { approvals: [], history: [], total: 0, page_size: 30 }, "/api/mcp-requests": { requests: [] }, "/gw/endpoint/requests": { requests: [] },
     "/gw/dispatch-intents": { rows: [] }, "/api/signup-requests?status=pending": { requests: [] }, alerts: { alerts: [] } } });
   const out = await markup(c);
-  assert.match(out, /대기:1/); assert.match(out, /평균 대기:—/); assert.match(out, /가장 오래된 대기:—/);
+  assert.match(out, /처리할 일:1/); assert.match(out, /평균 대기:—/); assert.match(out, /가장 오래된 대기:—/);
   assert.match(out, /<td class="num nowrap " title="[^"]*">—<\/td>/);
 });
 
@@ -196,19 +196,42 @@ test("내 MCP는 사용 가능한 MCP·내 동의·내 신청·새 신청 네 �
       : path === "/api/approved-mcp" ? { servers: [{ server_id: "files" }, { server_id: "docs" }] } : { requests: [], registry: [] }; },
     consentTabs: async () => [consentTab, { key: "history", label: "이력", body: kit.html`<p>이력 본문</p>` }],
     consentRows: () => [{ server_id: "files", status: "PENDING" }, { server_id: "docs", status: "GRANTED" }],
-    approvedMcpTable: (servers, _query, consentOf) => kit.html`${servers.map((s) => consentOf(s.server_id))}`,
+    approvedMcpTable: (servers, _query, consentOf) => kit.html`${servers.map((s) => consentOf(s))}`,
     intakeNewBody: (pre) => kit.html`<form>${pre.name}</form>` };
   const page = (await myRoute(c, "", new URLSearchParams("t=consent"))).html;
   assert.deepEqual(page.tabs.map((t) => t.key), ["available", "consent", "mine", "new"]);
   assert.equal(page.active, "available");
   const available = String(page.tabs[0].body);
-  assert.match(available, /#\/my\?t=consent&server=files[^]*동의 필요/); assert.match(available, /chip allow">동의/);
+  assert.match(available, /동의 필요[^]*#\/my\?t=consent&server=files[^]*동의 검토/); assert.match(available, /chip allow">동의함/);
   const consent = page.tabs[1];
   assert.equal(consent.n, 1); assert.equal(consent.hot, true); assert.match(String(consent.body), /동의 본문[^]*이력 본문/);
   assert.match(String(page.tabs[2].body), /내 신청[^]*검토 대기[^]*보완/);
-  assert.match(String(page.kpis), /data-act="pc-kit"[^]*활성화 대기/); assert.match(String(page.kpis), /동의 필요[^]*value">1</); assert.match(String(page.kpis), /진행 중 신청[^]*value">1</);
+  assert.match(String(page.kpis), /활성화 대기[^]*data-act="pc-kit">연결 설정/); assert.match(String(page.kpis), /동의 필요[^]*value">1</); assert.match(String(page.kpis), /진행 중 신청[^]*value">1</);
   assert.ok(!calls.includes("/api/mcp-catalog/search"));
   await myRoute(c, "new", new URLSearchParams("name=Notes"));
   assert.ok(calls.includes("/api/mcp-catalog/search"));
   assert.equal((await myRoute(c, "mine", new URLSearchParams())).html.active, "mine");
+});
+
+test("내 MCP는 동의 필요·불필요·확인 불가를 구분하고 PC 연결에 최근 보고와 연결 설정을 둔다", async () => {
+  const tool = (consent) => ({ name: "t", scope_reviewed: true, consent });
+  const servers = [{ server_id: "need", tools: [tool(true)] }, { server_id: "free", tools: [tool(false)] }, { server_id: "unk", tools: [] }, { server_id: "ok", tools: [tool(true)] }];
+  const old = new Date(Date.now() - 3 * HOUR).toISOString();
+  const c = { ...kit, viewer: { kit: {}, managed_devices: [{ status: "active", managed_state: "active", hostname: "pc-1", last_seen_at: old }] },
+    MANAGED_STATE: { active: "연결됨" }, INTAKE_STATUS: {}, ago: (v) => `ago:${v === old ? "3h" : v}`, when: (v) => v, empty: (v) => v, panel: (title, body) => kit.html`<section>${title}${body}</section>`,
+    head: (title) => title, page: (value) => value, listToolbar: () => "", approvedMcpSearch: () => "",
+    api: async (path) => (path === "/api/mcp-requests" ? { requests: [] } : path === "/api/approved-mcp" ? { servers } : { requests: [], registry: [] }),
+    consentTabs: async () => [{ key: "pending", label: "확인 필요", n: 0, body: "" }, { key: "history", label: "이력", body: "" }],
+    consentRows: () => [{ server_id: "need", status: "PENDING" }, { server_id: "ok", status: "GRANTED" }],
+    approvedMcpTable: (list, _query, consentOf) => kit.html`${list.map((s) => kit.html`<p data-s="${s.server_id}">${consentOf(s)}</p>`)}`, intakeNewBody: () => "" };
+  const page = (await myRoute(c, "", new URLSearchParams())).html;
+  const body = String(page.tabs[0].body);
+  assert.match(body, /data-s="need"[^]*동의 필요[^]*#\/my\?t=consent&server=need">동의 검토/);
+  assert.match(body, /data-s="free"[^]*동의 불필요/);
+  assert.match(body, /data-s="unk"[^]*확인 불가/);
+  assert.match(body, /data-s="ok"[^]*동의함/);
+  assert.equal(page.tabs[1].n, null);
+  assert.equal(page.tabs[2].label, "전체 신청");
+  const card = String(page.kpis);
+  assert.match(card, /보고 지연[^]*pc-1 · 최근 보고 ago:3h[^]*data-act="pc-kit">연결 설정/);
 });

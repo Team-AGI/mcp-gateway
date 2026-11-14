@@ -6,7 +6,7 @@ import { fragments, pieces } from "./i18n-extract.mjs";
 
 const STATIC = new URL("../gateway/app/agent_static/", import.meta.url);
 const HANGUL = /[가-힣]/;
-const FILES = ["console.js", "console-state.mjs", "charts.mjs", "inbox.mjs", "my.mjs", "login.js", "signup.js", "console.html", "login.html", "signup.html"];
+const FILES = ["console.js", "console-state.mjs", "charts.mjs", "inbox.mjs", "my.mjs", "dash.mjs", "login.js", "signup.js", "console.html", "login.html", "signup.html"];
 // Text no screen shows: liveLabel is only exercised by tests, "시" is the Korean-only branch of an hour label.
 const NOT_SHOWN = new Set(["갱신 실패{}", "· 마지막 {}", "일시정지{}", "· 대기 {}건", "실시간 · {}", "실시간 · 연결 중", "시"]);
 

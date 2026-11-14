@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { EN } from "../gateway/app/agent_static/i18n-en.mjs";
+import * as dash from "../gateway/app/agent_static/dash.mjs";
 
 const source = readFileSync(new URL("../gateway/app/agent_static/console.js", import.meta.url), "utf8");
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
@@ -23,7 +24,7 @@ ${section("function shadowLink(", "async function refreshBadges(")}
 ${section("const decisionReason =", "const VALIDITY =")}
 ${section("function alertGroups(", "let policyEvidence = {};")}
 ${section("const TOOL_PATH =", "ROUTES.policy =")}
-({decisionTable, alertsTab, alertGroups, alertTarget, endpointCallsTab});`, {URLSearchParams});
+({decisionTable, alertsTab, alertGroups, alertTarget, endpointCallsTab});`, {URLSearchParams, ...dash});
 
 test("blocked rows keep seven columns and distinguish duplicate calls from consent before opening detail", () => {
   const result = String(ui.decisionTable([
@@ -59,7 +60,7 @@ test("collapsed alerts name the host, user, server/tool and latest timestamp; id
   const result = table([first, latest]);
   assert.equal((result.match(/<tr class="clickable"/g) || []).length, 1);
   const row = /<tr class="clickable".*?<\/tr>/s.exec(result)[0];
-  for (const text of ["work-pc", "직원 이름", "Memory", "00:22:00Z", '<td class="num">2</td>']) assert.ok(row.includes(text), text);
+  for (const text of ["work-pc", "직원 이름", "Memory", "00:22:00Z", '<td class="num">2건</td>']) assert.ok(row.includes(text), text);
   assert.ok(!row.includes("long-device-uuid"));
   const tool = table([alert({origin: "endpoint-tool", evidence: {...first.evidence, place: "read_graph"}})]);
   assert.ok(/<tr class="clickable".*read_graph.*<\/tr>/s.test(tool));
