@@ -1,14 +1,14 @@
 {
-  "captured_at": "2026-11-14T16:11:05+09:00",
-  "head": "c197d723eb3f5cf77c47efc366852f4a4d2e6a83",
-  "branch": "fix/local-prepare-lock",
+  "captured_at": "2026-11-14T17:56:36+09:00",
+  "head": "b6da277df84780fe481c6ca70523061b0bc50a9b",
+  "branch": "console-redesign",
   "status": [
-    "M .github/release/mint/CHANGELOG.md",
-    " M CHANGELOG.md",
-    " M endpoint-agent/stdio_source.py",
-    " M full_stack_lab/tests/endpoint_stdio_check.py",
-    " M research/llm-wiki/analysis/integration-cases.json",
-    " M research/llm-wiki/analysis/requirements.json"
+    "M research/llm-wiki/analysis/integration-cases.json",
+    " M research/llm-wiki/analysis/requirements.json",
+    " M research/llm-wiki/analysis/threat-trace-review-1020/README.md",
+    " M research/llm-wiki/catalogs/threats.json",
+    " M research/llm-wiki/status/repository-snapshot.json",
+    " M research/llm-wiki/status/repository-snapshot.md"
   ],
   "scope": "local-code-only",
   "deployment_verified": false,
