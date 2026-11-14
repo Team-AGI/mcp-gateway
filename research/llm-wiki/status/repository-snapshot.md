@@ -1,8 +1,8 @@
 # 저장소 코드 스냅샷
 
-확인 시각: 2026-11-14T19:05:13+09:00
+확인 시각: 2026-11-14T19:29:10+09:00
 
-HEAD: `1cf50205ae922b0f7905250b96e1c48b5332da07` · 로컬 브랜치: `console-redesign`
+HEAD: `8c033b111c36f933341da1ed3d1595f5c3699f69` · 로컬 브랜치: `main`
 
 로컬 코드 상태입니다. 배포·활성화·실기기 검증과 실험 성공을 증명하지 않습니다.
 
@@ -24,6 +24,13 @@ M .github/actions/compose-cache/index.cjs
  M full_stack_lab/field/console/file.caddy
  M full_stack_lab/field/console/none.caddy
  M full_stack_lab/field/console/tailscale.caddy
+ M full_stack_lab/gateway/app/agent_static/console.js
+ M full_stack_lab/gateway/app/agent_static/i18n-en.mjs
+ M full_stack_lab/gateway/app/agent_static/inbox.mjs
+ M full_stack_lab/opa/policy.rego
+ M full_stack_lab/opa/policy_ledger.json
+ M full_stack_lab/tests/console-ia.test.mjs
+ M full_stack_lab/tests/console-inbox.test.mjs
  M research/collaboration-console/install-autostart.ps1
  M research/collaboration-console/run-console.ps1
  M research/collaboration-console/uninstall-autostart.ps1
@@ -70,7 +77,6 @@ M .github/actions/compose-cache/index.cjs
  M research/llm-wiki/analysis/user-command-settings/new-tests.log
  M research/llm-wiki/analysis/user-command-settings/wiki-build.log
  M research/llm-wiki/analysis/user-command-settings/wiki-check.log
- M research/llm-wiki/catalogs/threats.json
  M research/llm-wiki/experiments/2026-10-20-latency-ab-context7-pj1-run1-aborted.csv
  M research/llm-wiki/experiments/2026-10-20-latency-ab-context7-pj1.csv
  M research/llm-wiki/experiments/local-tools/desktop/blender-requirements.lock

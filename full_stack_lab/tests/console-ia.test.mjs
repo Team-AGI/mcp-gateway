@@ -307,7 +307,7 @@ test("관리자는 네 그룹 열 개 메뉴를 순서대로, 직원과 협력�
     assert.deepEqual([...markup.matchAll(/href="#\/([\w-]+)"/g)].map((m) => m[1]), admin ? adminPages.filter((id) => id !== "my") : ["my", "activity"]);
     assert.doesNotMatch(markup, /사내 저장소|바로가기|서비스 계정 연결|보안 관제|도구 이용 동의/);
     if (admin) {
-      for (const label of ["운영", "MCP 수명주기", "사람·기기", "처리함", "호출·감사", "도입 심사", "MCP 서버", "연결 통제", "종료·폐기", "사용자", "엔드포인트", "정책"]) assert.match(markup, new RegExp(label));
+      for (const label of ["운영", "MCP 수명주기", "사람·기기", "할 일", "호출·감사", "도입 심사", "MCP 서버", "연결 통제", "종료·폐기", "사용자", "엔드포인트", "정책"]) assert.match(markup, new RegExp(label));
       assert.deepEqual([...markup.matchAll(/class="group"[^>]*>([^<]+)</g)].map((m) => m[1]), ["운영", "MCP 수명주기", "사람·기기", "정책"]);
     } else {
       assert.match(markup, /내 MCP/); assert.match(markup, /내 호출/);
@@ -315,11 +315,11 @@ test("관리자는 네 그룹 열 개 메뉴를 순서대로, 직원과 협력�
   }
 });
 
-test("처리함은 15초마다 다시 읽되 서랍이 열려 있으면 건너뛴다", async () => {
+test("할 일은 15초마다 다시 읽되 서랍이 열려 있으면 건너뛴다", async () => {
   const ui = build(true);
   ui.setCurrent({ page: "inbox", arg: "", query: new URLSearchParams() });
   const out = await ui.ROUTES.inbox("", "", new URLSearchParams());
-  assert.match(String(out.html), /처리함/);
+  assert.match(String(out.html), /할 일/);
   out.after();
   assert.equal(ui.timers.size, 1);
   ui.context.routed = 0;
@@ -382,7 +382,7 @@ test("사용자 메뉴는 내 MCP와 PC 연결 설정과 승인된 MCP 저장소
   assert.doesNotMatch(staff.node("#app-identity").innerHTML, /user-menu/);
 });
 
-test("처리함 배지는 대기 전체, 도입 심사·종료·연결 통제 배지는 각자의 건수다", async () => {
+test("할 일 배지는 대기 전체, 도입 심사·종료·연결 통제 배지는 각자의 건수다", async () => {
   const consents = { consents: [
     { status: "PENDING", server_id: "a" }, { status: "PENDING", server_id: "a" },
     { status: "PENDING", server_id: "b" }, { status: "GRANTED", server_id: "c" }] };
@@ -520,7 +520,7 @@ test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승
   assert.match(String(links.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
 });
 
-test("대시보드 처리할 일은 처리함과 같은 집합을 세고 점검 대상은 따로 보인다", async () => {
+test("대시보드 처리할 일은 할 일과 같은 집합을 세고 점검 대상은 따로 보인다", async () => {
   const approvals = Array.from({ length: 7 }, (_, i) => ({ id: `call-${i}`, server_id: "docs", tool: "read",
     requested_by: "<img src=x>", created_at: "2026-10-31T00:00:00Z", expires_at: "2026-11-01T00:00:00Z", own: i === 0 }));
   const ui = build(true, { "/approvals": { approvals, history: [] },
@@ -728,20 +728,13 @@ test("대시보드 차트 6종은 판정·서버·정책·사용자·엔드포�
   assert.equal(out.charts["c-dash-policies"]().items[0].name, "호출 횟수 상한");
 });
 
-test("대시보드 상태 줄은 정책 엔진 일치와 관제 전달 상태를 조회 결과대로 보이고 실패를 정상으로 숨기지 않는다", async () => {
+test("대시보드 상태 줄은 정상이면 비어 있고 관찰 모드·구성 요소 이상·정책 엔진 불일치만 보인다", async () => {
   const state = async (extra) => String((await build(true, extra).ROUTES.overview("", "summary")).html.head);
   const ok = await state({ "/gw/policy/ledger": { policies: [], deployment: { rules_match: true, data_match: true } }, "/gw/audit/siem": { pending: 0, retrying: 0, last_delivered: new Date().toISOString() } });
-  assert.match(ok, /정책 엔진 일치/);
-  assert.match(ok, /관제 전달/);
+  assert.doesNotMatch(ok, /정책 엔진 일치|집행 모드|구성 요소 정상|관제/);
   const mismatch = await state({ "/gw/policy/ledger": { policies: [], deployment: { rules_match: true, data_match: false } }, "/gw/audit/siem": { pending: 4, retrying: 1 } });
   assert.match(mismatch, /정책 엔진 불일치/);
-  assert.match(mismatch, /관제 미전달 4/);
-  const none = await state({ "/gw/audit/siem": { pending: 0, retrying: 0, last_delivered: null } });
-  assert.match(none, /정책 엔진 확인 불가/);
-  assert.match(none, /관제 미설정/);
-  const failed = await state({ "/gw/audit/siem": new Error("실패"), "/gw/policy/ledger": new Error("실패") });
-  assert.match(failed, /관제 확인 불가/);
-  assert.doesNotMatch(failed, /관제 미설정|정책 엔진 일치/);
+  assert.doesNotMatch(mismatch, /관제/);
 });
 
 test("대시보드 갱신은 카드와 처리 목록을 바꾸고 검토와 화면 이동을 보존한다", async () => {
@@ -756,7 +749,7 @@ test("대시보드 갱신은 카드와 처리 목록을 바꾸고 검토와 화�
   assert.match(ui.node("#dashboard-summary").innerHTML, /처리할 일<\/div><div class="value">1/);
   assert.match(ui.node("#dashboard-summary").innerHTML, /data-href="#\/inbox\?f=people&amp;open=signup%3As1"/);
   assert.ok(ui.node("#dashboard-analysis").innerHTML.includes("c-dash-policies"));
-  assert.match(ui.node("#view .page-head .status").innerHTML, /집행 모드/);
+  assert.doesNotMatch(ui.node("#view .page-head .status").innerHTML, /집행 모드/);
   const reads = ui.calls.length;
   ui.node("#dialog").open = true;
   await ui.refreshDashboard(); assert.equal(ui.calls.length, reads);
@@ -927,7 +920,7 @@ test("판단 불가 종결은 잔여 상태와 미완료 절차를 유지하고 
   assert.ok((head.match(/class="step done/g)||[]).length<7);
 });
 
-test("실행 확인과 승인 처리 이력은 처리함에 모으고 상세와 번복을 유지한다", async () => {
+test("실행 확인과 승인 처리 이력은 할 일에 모으고 상세와 번복을 유지한다", async () => {
   const ui = build(true, { "/approvals": { approvals: [], history: [{ id: "past", requested_by: "alice",
     server_id: "docs", tool: "read", status: "EXECUTED", explanation: {}, can_revoke: true }] },
     "/gw/dispatch-intents": { rows: [{ request_id: "uncertain", server_id: "docs", tool_name: "read", action: "r" }] } });
@@ -1569,7 +1562,7 @@ test("호출 목록은 직원에게 사유와 다음 행동을, 관리자에게 
   assert.equal(admin.node("#feed-total").textContent, "");
 });
 
-test("처리함 주소의 열기 값은 해당 항목 서랍을 한 번만 열고 주소에서 지운다", async () => {
+test("할 일 주소의 열기 값은 해당 항목 서랍을 한 번만 열고 주소에서 지운다", async () => {
   const ui = build(true, { "/api/signup-requests?status=pending": { requests: [{ id: "s1", status: "pending", username: "kim", requested_at: "2026-11-01T00:00:00Z" }] } });
   const query = new URLSearchParams("f=people&open=signup%3As1");
   ui.setCurrent({ page: "inbox", arg: "", query });

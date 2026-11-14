@@ -69,7 +69,7 @@ function context(overrides = {}) {
 
 const markup = async (c, query = "") => String((await inboxRoute(c, new URLSearchParams(query))).html);
 
-test("처리함은 여섯 갈래의 대기를 오래된 것부터 한 표에 모으고 처리된 것은 뺀다", async () => {
+test("할 일은 여섯 갈래의 대기를 오래된 것부터 한 표에 모으고 처리된 것은 뺀다", async () => {
   const { c } = context();
   const { items } = await loadInbox(c);
   assert.equal(items.length, 9);
@@ -95,7 +95,7 @@ test("유형 칩은 건수를 보이고 선택한 유형만 표에 남기며 본
   assert.match(none, /조건에 맞는 결과 없음/);
 });
 
-test("읽은 경보는 처리함에서 빠지고 같은 경보는 한 행으로 묶인다", async () => {
+test("읽은 경보는 할 일에서 빠지고 같은 경보는 한 행으로 묶인다", async () => {
   const { c } = context({ seen: [[11, 12]] });
   const { items } = await loadInbox(c);
   assert.deepEqual(items.filter((i) => i.type === "alert").map((i) => i.raw.id), [3]);

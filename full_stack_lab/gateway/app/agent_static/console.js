@@ -420,7 +420,7 @@ const chartBox = (id, label, size = "") => html`<div class="chart ${size}" id="$
 
 const PAGES = [
   { id: "overview", label: "대시보드", group: "운영" },
-  { id: "inbox", label: "처리함", group: "운영", badge: "inbox" },
+  { id: "inbox", label: "할 일", group: "운영", badge: "inbox" },
   { id: "activity", label: "호출·감사", group: "운영" },
   { id: "intake", label: "도입 심사", group: "MCP 수명주기", badge: "intake" },
   { id: "servers", label: "MCP 서버", group: "MCP 수명주기" },
@@ -1007,11 +1007,9 @@ function dashboardAnalysis(m) {
 }
 
 function dashboardStatus(m) {
-  const d = m.delivery;
-  const siem = !d ? chip("alert", "관제 확인 불가") : d.configured === false ? html`<a href="#/activity?t=audit">${chip("outline", "관제 미설정")}</a>`
-    : Number(d.pending) > 0 ? chip(Number(d.retrying) > 0 ? "alert" : "outline", `관제 미전달 ${d.pending}`)
-      : d.last_delivered ? chip("allow", `관제 전달 ${ago(d.last_delivered)}`) : html`<a href="#/activity?t=audit">${chip("outline", "관제 미설정")}</a>`;
-  return html`${modeChip(m.o.enforcement)}${componentHealth(m.health)}${engineChip(m.ledger?.deployment)}${siem}`;
+  const health = componentHealth(m.health);
+  const deployment = m.ledger?.deployment;
+  return html`${m.o.enforcement === "enforce" ? "" : modeChip(m.o.enforcement)}${String(health).includes("확인 필요") ? health : ""}${deployment && (deployment.rules_match === false || deployment.data_match === false) ? engineChip(deployment) : ""}`;
 }
 
 function dashboardBar(m) {
