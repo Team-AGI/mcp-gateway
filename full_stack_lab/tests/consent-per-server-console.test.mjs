@@ -21,7 +21,7 @@ async function render(consents) {
   vm.runInContext(`${safeHTML}\n${panel}\nconst chip = (tone, label) => html\`<span>\${label}</span>\`;
     const empty = (label) => html\`<div>\${label}</div>\`;
     ${route}\nglobalThis.actions = {${handler}};`, context);
-  return { page: await context.ROUTES.consent(), context, calls };
+  return { page: { tabs: await context.consentTabs() }, context, calls };
 }
 
 const row = (id, server_id = "files", status = "PENDING") => ({

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { EN } from "../gateway/app/agent_static/i18n-en.mjs";
+import * as dash from "../gateway/app/agent_static/dash.mjs";
 
 const source = readFileSync(new URL("../gateway/app/agent_static/console.js", import.meta.url), "utf8");
 const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end));
@@ -18,11 +19,12 @@ const policyLedger = [{policy_id: 'custom', name: '<img src=x>'}];
 const policyLabel = (id) => id;
 const CHECK_LABEL = {};
 const ALERT_KIND = {'unapproved-endpoint-mcp': '미등록 MCP 사용'};
+const alertsSeen = () => [];
 ${section("function shadowLink(", "async function refreshBadges(")}
 ${section("const decisionReason =", "const VALIDITY =")}
-${section("function alertGroups(", "const alertsTab =")}
+${section("function alertGroups(", "let policyEvidence = {};")}
 ${section("const TOOL_PATH =", "ROUTES.policy =")}
-({decisionTable, groupedAlerts, alertGroups, alertTarget, endpointCallsTab});`, {URLSearchParams});
+({decisionTable, alertsTab, alertGroups, alertTarget, endpointCallsTab});`, {URLSearchParams, ...dash});
 
 test("blocked rows keep seven columns and distinguish duplicate calls from consent before opening detail", () => {
   const result = String(ui.decisionTable([
@@ -54,13 +56,15 @@ const alert = (overrides = {}) => ({kind: "unapproved-endpoint-mcp", origin: "en
 
 test("collapsed alerts name the host, user, server/tool and latest timestamp; identifiers stay out of the title", () => {
   const first = alert(), latest = alert({created_at: "2026-11-01T00:22:00Z"});
-  const result = String(ui.groupedAlerts([first, latest]));
-  const title = /<summary>(.*?)<\/summary>/.exec(result)[1];
-  for (const text of ["work-pc", "직원 이름", "Memory", "00:22:00Z", "2건"]) assert.ok(title.includes(text));
-  assert.ok(!title.includes("long-device-uuid"));
-  const tool = String(ui.groupedAlerts([alert({origin: "endpoint-tool", evidence: {...first.evidence, place: "read_graph"}})]));
-  assert.ok(/<summary>.*read_graph.*<\/summary>/.test(tool));
-  const escaped = String(ui.groupedAlerts([alert({hostname: "<img>", evidence: {...first.evidence, label: "<script>"}})]));
+  const table = (alerts) => String(ui.alertsTab({alerts}, new URLSearchParams()));
+  const result = table([first, latest]);
+  assert.equal((result.match(/<tr class="clickable"/g) || []).length, 1);
+  const row = /<tr class="clickable".*?<\/tr>/s.exec(result)[0];
+  for (const text of ["work-pc", "직원 이름", "Memory", "00:22:00Z", '<td class="num">2건</td>']) assert.ok(row.includes(text), text);
+  assert.ok(!row.includes("long-device-uuid"));
+  const tool = table([alert({origin: "endpoint-tool", evidence: {...first.evidence, place: "read_graph"}})]);
+  assert.ok(/<tr class="clickable".*read_graph.*<\/tr>/s.test(tool));
+  const escaped = table([alert({hostname: "<img>", evidence: {...first.evidence, label: "<script>"}})]);
   assert.ok(!escaped.includes("<img>"));
   assert.ok(!escaped.includes("<script>"));
 });

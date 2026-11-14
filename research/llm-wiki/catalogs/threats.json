@@ -35,9 +35,9 @@
       },
       {
         "path": "full_stack_lab/gateway/app/agent_service.py",
-        "sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
-        "committed_sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
-        "normalized_sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
+        "sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "committed_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "normalized_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
         "worktree_modified": false
       }
     ],
@@ -155,9 +155,9 @@
     "code_candidates": [
       {
         "path": "full_stack_lab/gateway/app/agent_service.py",
-        "sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
-        "committed_sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
-        "normalized_sha256": "c448cd6f3fc80c753d1d92b042c89665e0453efd031ba63e862dc674fe225ebe",
+        "sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "committed_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
+        "normalized_sha256": "7896405d122f23a6806136aaecb037fe89f4c8073855da244faa6a85e6e3ca7d",
         "worktree_modified": false
       },
       {
@@ -801,9 +801,9 @@
       },
       {
         "path": "full_stack_lab/gateway/app/endpoint_plane.py",
-        "sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
-        "committed_sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
-        "normalized_sha256": "b2c70668fccb7ef67af10dd8318baf39fd41553c44e5c204fa317f510463d236",
+        "sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
+        "committed_sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
+        "normalized_sha256": "c20d42d8c1d2429f57663c9ff1bc596c2134a854a23faadc300df7ea514d1fd7",
         "worktree_modified": false
       }
     ],
@@ -1820,9 +1820,9 @@
       },
       {
         "path": "full_stack_lab/gateway/app/residency.py",
-        "sha256": "cfb963081e32da6b94a6be3bcb00116149bd0ab0ac7db6cb8cca64bfd3d46723",
-        "committed_sha256": "cfb963081e32da6b94a6be3bcb00116149bd0ab0ac7db6cb8cca64bfd3d46723",
-        "normalized_sha256": "cfb963081e32da6b94a6be3bcb00116149bd0ab0ac7db6cb8cca64bfd3d46723",
+        "sha256": "b6f9f8a443f1a6b90f71d48bff20ce4670c8d2c34c25f3746af9cca17165c039",
+        "committed_sha256": "b6f9f8a443f1a6b90f71d48bff20ce4670c8d2c34c25f3746af9cca17165c039",
+        "normalized_sha256": "b6f9f8a443f1a6b90f71d48bff20ce4670c8d2c34c25f3746af9cca17165c039",
         "worktree_modified": false
       }
     ],
@@ -1984,6 +1984,7 @@
         "full_stack_lab/gateway/app/consent.py",
         "full_stack_lab/gateway/app/core.py",
         "full_stack_lab/gateway/app/pac.py",
+        "full_stack_lab/gateway/app/residency.py",
         "full_stack_lab/opa/policy_test.rego",
         "full_stack_lab/tests/remaining_controls_check.py"
       ]

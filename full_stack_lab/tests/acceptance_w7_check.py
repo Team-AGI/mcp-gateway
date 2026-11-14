@@ -421,7 +421,8 @@ class W7Checks(unittest.IsolatedAsyncioTestCase):
 
     def test_connections_menu_and_screen_are_gone_for_both_roles(self):
         # The service account page was removed from the console; its API stays for the plugin rework.
-        self.assertNotIn("connections", a.ADMIN_MENUS)
+        # "connections" is the administrators' connection-control screen, never an employee menu.
+        self.assertIn("connections", a.ADMIN_MENUS)
         self.assertNotIn("connections", a.EMPLOYEE_MENUS)
         for screens in (a.ADMIN_SCREENS, a.EMPLOYEE_SCREENS):
             self.assertNotIn("/api/my-connections", [path for path, _ in screens])

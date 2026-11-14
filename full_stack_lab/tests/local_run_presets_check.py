@@ -94,7 +94,7 @@ class Presets(unittest.TestCase):
     def test_preview_returns_the_suggestion_and_the_dialog_prefills_only_when_nothing_is_stored(self):
         self.assertIn('"local_run_preset": intake_proposal.local_run_preset(row)', SERVICE)
         self.assertIn('"local_run_status": intake_proposal.local_run_status(row)', SERVICE)
-        self.assertIn("askLocalRun(id, out.request, out.local_run_preset, out.local_run_status)", CONSOLE)
+        self.assertIn("askLocalRun(el.dataset.id, out.request, out.local_run_preset, out.local_run_status)", CONSOLE)
         self.assertIn('${status ? chip("alert", status) : ""}', CONSOLE)
         self.assertIn("const generated = request.evidence?.endpoint_source;", CONSOLE)
         self.assertIn("const cur = request.evidence?.local_run || (generated ? { source: generated } : preset);", CONSOLE)

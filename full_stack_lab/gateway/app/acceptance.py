@@ -621,8 +621,8 @@ async def invitation_enrollment() -> str:
 # Gateway only through its own origin, so this goes through agent-service like the browser does.
 CONSOLE_URL = os.getenv("AGENT_SERVICE_URL", "http://agent-service:8000").rstrip("/")
 # Keep runtime acceptance aligned with the role-scoped console navigation.
-ADMIN_MENUS = {"overview", "activity", "security", "servers", "people", "endpoints", "policy", "intake", "termination", "consent"}
-EMPLOYEE_MENUS = {"activity", "consent", "intake"}
+ADMIN_MENUS = {"overview", "inbox", "activity", "intake", "servers", "connections", "termination", "people", "endpoints", "policy", "my"}
+EMPLOYEE_MENUS = {"my", "activity"}
 ADMIN_SCREENS = [
     ("/auth/me", ["name", "role_label", "user_id", "pages"]),
     ("/gw/overview", ["today_since", "servers", "workstations", "top_policies", "pending_approvals", "intake_actions",
@@ -659,7 +659,11 @@ ADMIN_SCREENS = [
                                "summary.overdue", "summary.sla_days", "summary.retired_residue", "summary.shadow_endpoints"]),
     ("/gw/audit/events?limit=100", ["events", "has_more"]),
     ("/gw/audit/events?limit=100&decision=Block&event_kind=tools/call", ["events"]),
-    ("/gw/audit/siem", ["pending", "retrying", "oldest_pending", "last_delivered"]),
+    ("/gw/audit/siem", ["configured", "pending", "retrying", "oldest_pending", "last_delivered"]),
+    ("/gw/audit/retention", ["days", "floor_days"]),
+    ("/gw/endpoint/requests", ["requests"]),
+    ("/api/signup-requests?status=pending", ["requests"]),
+    ("/api/approved-mcp", ["servers"]),
     ("/gw/audit/incidents", ["incidents", "timer_status"]),
     ("/gw/audit/verify", ["intact", "checked"]),
     ("/gw/enforcement", ["enforcement"]),
@@ -674,6 +678,7 @@ EMPLOYEE_SCREENS = [
     ("/api/consents", ["consents"]),
     ("/api/mcp-requests", ["requests"]),
     ("/api/mcp-catalog/search", ["requests", "registry"]),
+    ("/api/approved-mcp", ["servers"]),
 ]
 
 

@@ -7,7 +7,7 @@ const source = readFileSync(new URL("../gateway/app/agent_static/console.js", im
 const safeHTML = source.slice(source.indexOf("class Raw {"), source.indexOf("const short = "));
 const fields = source.slice(source.indexOf("const field = {"), source.indexOf("function scopeFields("));
 const audience = source.slice(source.indexOf("const AUDIENCE = "), source.indexOf("function validityChip("));
-const approval = source.slice(source.indexOf("const ASSURANCE_LABELS = "), source.indexOf("async function showIntakeApproval("));
+const approval = source.slice(source.indexOf("const ASSURANCE_LABELS = "), source.indexOf("const APPROVABLE = "));
 const context = vm.createContext({ URL });
 vm.runInContext(`${safeHTML}\n${fields}\n
   const DATA_CLASS = {public:"공개",nonimportant:"내부",important:"중요"};
@@ -18,7 +18,7 @@ vm.runInContext(`${safeHTML}\n${fields}\n
   const kv = (pairs) => html\`<dl>\${pairs.map(([k,v])=>html\`<dt>\${k}</dt><dd>\${v}</dd>\`)}</dl>\`;
   const NONE = "—"; ${audience}
   ${approval}
-  globalThis.render = (out) => String(intakeApprovalFields(out));`, context);
+  globalThis.render = (out) => String(intakeScopeFields(out)) + String(intakeDock(out, "r1"));`, context);
 
 const fixture = (tier) => ({ request: { display_name: "문서 검색", submitted_by: "직원", endpoint_url: "https://example.test/mcp",
   intake_kind: "remote-endpoint" }, gate: { scanners: [], critical: null },
@@ -36,13 +36,13 @@ test("only the very high tier asks for the written reason, and the second admini
 });
 
 test("the approval request carries the reason", () => {
-  assert.ok(source.includes('risk_reason: String(fd.get("risk_reason") || "").trim()'));
+  assert.ok(source.includes('String(fd.get("risk_reason") || "").trim()'));
 });
 
 // D-189 추가 판단 2·3: 근거 없는 신청은 보류로 보이고, 받지 못한 공급자 항목은 「확인 안 됨」으로 보인다.
 const risky = source.slice(source.indexOf("function riskCell("), source.indexOf("const supportStatus"));
 const shown = source.slice(source.indexOf("const supportStatus"), source.indexOf("const ASSURANCE_LABELS"))
-  + source.slice(source.indexOf("const UNCONFIRMED"), source.indexOf("function intakeApprovalFields("));
+  + source.slice(source.indexOf("const UNCONFIRMED"), source.indexOf("function intakeScopeFields("));
 const list = vm.createContext({ URL, viewer: { admin: true } });
 vm.runInContext(`${safeHTML}
   const NONE = html\`<span>—</span>\`; const RISK_TIER = {low:["allow","낮음"],high:["alert","높음"]};

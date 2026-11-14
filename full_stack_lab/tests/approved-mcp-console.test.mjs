@@ -4,12 +4,13 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { makeTranslator } from "../gateway/app/agent_static/i18n.mjs";
 import { EN } from "../gateway/app/agent_static/i18n-en.mjs";
+import * as dash from "../gateway/app/agent_static/dash.mjs";
 
 const source = readFileSync(new URL("../gateway/app/agent_static/console.js", import.meta.url), "utf8");
 const safe = source.slice(source.indexOf("class Raw {"), source.indexOf("function detailText("));
 const table = source.slice(source.indexOf("function approvedMcpTable("), source.indexOf("ROUTES.intake ="));
 const ui = runInNewContext(`${safe}
-const when = (v) => v || "—", viewer = {kit: true}, location = {origin:"https://console.example"};
+const when = (v) => v || "—", NONE = "—", viewer = {kit: true}, location = {origin:"https://console.example"};
 const ACTION = {r:"읽기",w:"쓰기",x:"외부전송 및 실행"};
 const empty = (v) => html\`<div>\${v}</div>\`;
 const chip = (_, label) => html\`<span>\${label}</span>\`;
@@ -17,7 +18,7 @@ const kv = (pairs) => html\`<dl>\${pairs.map(([k,v]) => html\`<dt>\${k}</dt><dd>
 let drawer;
 const openDrawer = (title,controls,tabs) => {drawer={title,controls,tabs};};
 ${table}
-({render:approvedMcpTable, show(server){showAvailableMcp(server);return drawer;}, address:approvedMcpAddress});`, {URL});
+({render:approvedMcpTable, show(server){showAvailableMcp(server);return drawer;}, address:approvedMcpAddress});`, {URL, ...dash});
 const render = ui.render;
 const row = {server_id:"notes",display_name:"Notes",purpose:"문서 검색",source_url:"https://github.com/example/notes",
   commit_sha:"a".repeat(40),valid_until:"2027-01-01T00:00:00+00:00",execution:"pc",source_available:true,connection_url:"/mcp/notes/",
@@ -25,7 +26,7 @@ const row = {server_id:"notes",display_name:"Notes",purpose:"문서 검색",sour
 
 test("available MCP list prioritizes purpose, tools, expiry and usage over technical provenance", () => {
   const result = String(render([row]));
-  for (const value of ["사용 목적","제공 도구","사용 기한","이용 방법",row.purpose,row.valid_until]) assert.ok(result.includes(value), value);
+  for (const value of ["사용 목적","제공 도구","사용 기한","이용 방법",row.purpose,"1월 1일","1개"]) assert.ok(result.includes(value), value);
   for (const value of ["고정 커밋",row.commit_sha,row.source_url,"mcp-source-download"]) assert.ok(!result.includes(value), value);
   assert.ok(result.includes('data-act="available-mcp"'));
   const filtered = String(render([row], "missing"));
@@ -70,16 +71,16 @@ test("available MCP labels translate into English", () => {
 });
 
 // D-262 정정: 직원도 바로가기로 사내 저장소를 읽는다(다운로드는 /auth/gitea가 막는다). 신청 행에는 저장소 링크가 없다.
-test("employee navigation shows the internal repository shortcut; intake rows do not link to Gitea", () => {
-  const nav = source.slice(source.indexOf("function renderNav("), source.indexOf("function setNavCollapsed("));
+test("the internal repository link lives in the user menu; intake rows do not link to Gitea", () => {
+  const nav = source.slice(source.indexOf("function userMenu("), source.indexOf("function setNavCollapsed("));
   const run = runInNewContext(`${safe}
-let output;
-const viewer = {admin: false, git_url: "/git/mcp", pages: []};
-const PAGES = [], badges = {};
-const $ = () => ({set innerHTML(v) {output = v;}});
+const outputs = {};
+const viewer = {admin: false, name: "직원", role_label: "직원", git_url: "/git/mcp", pages: []};
+const PAGES = [], STAFF_PAGES = [], badges = {};
+const $ = (selector) => ({set innerHTML(v) {outputs[selector] = v;}});
 const sameSite = (v) => v, icon = () => "";
 ${nav}
-renderNav("intake"); output;`);
+renderNav("my"); outputs["#app-identity"];`);
   assert.ok(run.includes("/git/mcp"));
   const catalog = source.slice(source.indexOf("function catalogResults("), source.indexOf("const CONSENT_STATUS ="));
   const result = runInNewContext(`${safe}
@@ -89,7 +90,7 @@ const empty = (v) => v;
 ${catalog}
 String(catalogResults({requests: [{status: "APPROVED", internal_repo_url: "/git/mcp/notes"}]}));`);
   assert.ok(!result.includes("/git/"));
-  assert.ok(source.includes('viewer.admin && r.internal_repo_url ? html`<a'));
+  assert.ok(source.includes('r.internal_repo_url ? html`<div class="row-actions"><a class="btn sm"'));
 });
 
 test("source download uses the console route, bearer header and fixed filename", async () => {
