@@ -98,7 +98,7 @@ test("내 PC 연결: 내려받는 파일 이름은 서버가 주는 값을 쓴�
 
 test("삭제된 사용자: 목록 탭과 복구 동작이 있다", () => {
   assert.match(source, /api\("\/api\/accounts\/deleted"\)/);
-  assert.match(source, /key: "deleted", label: "삭제된 사용자"/);
+  assert.match(source, /["deleted", "삭제됨"]/);
   assert.match(source, /data-act="account-restore" data-id="\$\{a\.user_id\}"/);
   assert.match(source, /async "account-restore"\(el\)[\s\S]*?\/restore`, \{ method: "POST" \}/);
 });

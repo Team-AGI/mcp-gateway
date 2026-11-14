@@ -356,7 +356,7 @@ class Routes(StoreCase):
                     names = {a.args[0].id for a in node.args.defaults if isinstance(a, ast.Call) and a.args and isinstance(a.args[0], ast.Name)}
                     self.assertIn("caller", names, node.name)
         self.assertEqual(found, 5)
-        self.assertFalse(any("connections" in agent_service.PAGES_BY_ROLE[role] for role in ("employee", "partner")))
+        self.assertFalse(any("connections" in pages for role, pages in agent_service.PAGES_BY_ROLE.items() if role != "admin"))
 
 
 class Lifecycle(StoreCase):

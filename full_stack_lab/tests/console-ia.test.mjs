@@ -146,7 +146,7 @@ test("미등록 MCP 조치는 엔드포인트·근거 기록을 보존하고 동
   const ui = build(true);
   const shadow = String(ui.decisionAction({ decision: "Block", policy_id: "MCP-SHADOW-001", device_id: "pc/<1>",
     evidence: { record_kind: "listener", record_id: 73 }, reason: '<script>x</script>' }));
-  assert.match(shadow, /#\/endpoints\?t=shadow/); assert.match(shadow, /endpoint=pc%2F%3C1%3E/); assert.match(shadow, /record_kind=listener/); assert.match(shadow, /record_id=73/);
+  assert.match(shadow, /#\/connections\?t=shadow/); assert.match(shadow, /endpoint=pc%2F%3C1%3E/); assert.match(shadow, /record_kind=listener/); assert.match(shadow, /record_id=73/);
   assert.doesNotMatch(shadow, /<script>/); assert.match(shadow, /사유/); assert.match(shadow, /실행 안 함/);
   for (const admin of [true, false]) {
     const part = String(build(admin).decisionAction({ decision: "Block", policy_id: "PAC-CONSENT-001", server: "files/a", tool: "read x" }));
@@ -238,28 +238,30 @@ test("신청 실패는 입력과 도구 선택을 남기고 해당 필드를 접
   assert.equal(form.dataset.submitting, "false");
 });
 
-test("엔드포인트 검색·상태·선택은 세 표를 같은 ID로 좁히고 식별값을 분리한다", async () => {
-  const ui = build(), q = new URLSearchParams("t=devices&q=kim&state=pending&endpoint=ep1");
+test("엔드포인트 표는 검색·상태 조건으로 좁히고 한 표에 사용자·호스트·상태를 모은다", async () => {
+  const ui = build(), q = new URLSearchParams("t=devices&q=kim&state=pending&silent=1");
   ui.setCurrent({ page: "endpoints", arg: "", query: q });
-  const inventory = { ...ui.inventory, agents: [{ endpoint_id: "ep1", hostname: "host-one", owner_name: "직원 이름", managed_state: "pending", local_username: "pc-user", status: "active" }] };
-  ui.responses["/gw/endpoint/inventory?q=kim&state=pending&endpoint=ep1"] = inventory;
-  ui.responses["/gw/endpoint/inventory?classification=shadow,retired-residue&endpoint=ep1"] = ui.inventory;
+  const inventory = { ...ui.inventory, agents: [{ endpoint_id: "ep1", hostname: "host-one", owner_name: "직원 이름", managed_state: "pending", local_username: "pc-user", status: "active", policy_hash: "h", shadow: 2 }] };
+  ui.responses["/gw/endpoint/inventory?q=kim&state=pending"] = inventory;
   ui.responses["/api/integrations"] = { items: [], devices: [
-    { endpoint_id: "ep1", hostname: "host-one", account: "pc-user", state: "observed_only", checks: {} },
-    { endpoint_id: "ep2", hostname: "host-other", account: "other-user", state: "observed_only", checks: {} },
+    { endpoint_id: "ep1", hostname: "host-one", account: "pc-user", state: "observed_only", checks: { apparmor_enforcing: true, protected_configs: false } },
   ] };
   const out = await ui.ROUTES.endpoints("", "devices", q);
   const body = String(out.html.tabs.find((tab) => tab.key === "devices").body);
-  assert.match(body, /選択|선택 기기/); assert.match(body, /<dl class="kv">/);
-  assert.match(body, /<dt>호스트<\/dt><dd>host-one/); assert.match(body, /<dt>PC 계정<\/dt><dd>pc-user/);
-  assert.match(body, /직원 이름/); assert.doesNotMatch(body, /host-other|other-user/);
-  assert.match(body, /name="q"[^>]*value="kim"/); assert.match(body, /value="pending" selected/);
+  assert.match(body, /<th>사용자<\/th><th>호스트<\/th><th>상태<\/th><th>마지막 보고<\/th>/);
+  assert.match(body, /직원 이름/); assert.match(body, /host-one/); assert.match(body, /활성화 대기/); assert.match(body, /미충족 설정 보호/);
+  assert.match(body, /data-act="endpoint-device" data-id="ep1"/); assert.match(body, /data-act="device-activate"/);
+  assert.match(body, /name="q"[^>]*value="kim"/); assert.match(body, /value="pending" selected/); assert.match(body, /name="silent" value="1"\s+checked/);
+  assert.doesNotMatch(body, /통제 점검<\/h2>|엔드포인트 MCP 설정/);
+  assert.match(String(out.html.kpis), /등록 PC[^]*최근 15분 보고[^]*15분 이상 미보고[^]*격리[^]*활성화 대기/);
+  assert.match(String(out.html.kpis), /c-endpoint-state[^]*c-endpoint-age/);
+  assert.deepEqual(Object.keys(out.charts), ["c-endpoint-state", "c-endpoint-age"]);
 });
 
 test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기록 상세를 함께 연다", async () => {
   const ui = build();
   ui.context.matchMedia = () => ({ matches: false });
-  ui.context.location.hash = "#/endpoints?t=shadow&endpoint=ep1&record_kind=listener&record_id=73&dt=source";
+  ui.context.location.hash = "#/connections?t=shadow&endpoint=ep1&record_kind=listener&record_id=73&dt=source";
   ui.responses["/gw/endpoint/inventory?endpoint=ep1"] = ui.inventory;
   ui.responses["/gw/endpoint/inventory?classification=shadow,retired-residue&endpoint=ep1"] = ui.inventory;
   ui.responses["/gw/endpoint/records/listener/73"] = { id: 73, record_kind: "listener", endpoint_id: "ep1", address: "127.0.0.1", provenance: {} };
@@ -270,18 +272,20 @@ test("미등록 근거 직행 URL은 해당 엔드포인트 목록과 기존 기
   assert.match(String(ui.node("#drawer-body").innerHTML), /d-tab-source[^>]*aria-selected="true"/);
 });
 
-test("종료 목록의 예상·실제 결과와 케이스 근거 링크는 별도 열이다", async () => {
+test("종료 목록은 탭 없이 단계·남은 회수·기한과 예상·실제 결과를 한 줄에 둔다", async () => {
   const ui = build(true, {
-    "/gw/termination/relationships": { relationships: [{ id: "rel1", display_name: "문서 서버", status: "ACTIVE", lifecycle: "OPERATING", latest_case: "case1", readiness: { best_attainable_grade: "T1" } }] },
-    "/gw/termination/cases": { cases: [{ id: "case1", relationship_id: "rel1", display_name: "문서 서버", grade: "T2", status: "ASSESSED" }], summary: {} },
+    "/gw/termination/relationships": { relationships: [{ id: "rel1", server_id: "docs", display_name: "문서 서버", status: "ACTIVE", lifecycle: "OPERATING", latest_case: "case1", readiness: { best_attainable_grade: "T1" } }] },
+    "/gw/termination/cases": { cases: [{ id: "case1", relationship_id: "rel1", display_name: "문서 서버", grade: "T2", status: "ASSESSED", outstanding: 2, opened_at: "2026-11-01T00:00:00Z" }, { id: "case2", display_name: "닫힌 서버", status: "CLOSED", grade: "T1", outstanding: 0 }], summary: { sla_days: 14, open_cases: 1 } },
   });
   const out = await ui.ROUTES.termination();
-  for (const tab of out.html.tabs) {
-    const body = String(tab.body);
-    assert.match(body, /<th>예상 결과<\/th><th>실제 결과<\/th><th>근거<\/th>/);
-    assert.match(body, /완전 종료/); assert.match(body, /부분 종료/);
-    assert.match(body, /href="#\/termination\/case1\?t=evidence"/);
-  }
+  assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), ["cases"]);
+  const body = String(out.html.tabs[0].body);
+  assert.match(body, /<th>단계<\/th><th class="num">남은 회수<\/th><th>기한<\/th><th>예상 결과<\/th><th>실제 결과<\/th>/);
+  assert.match(body, /완전 종료/); assert.match(body, /부분 종료/);
+  assert.equal((body.match(/<i class="done"><\/i>/g) || []).length, 6 + 7);
+  assert.match(body, /data-act="open-case" data-id="case1"/);
+  assert.match(String(out.html.kpis), /진행 중[^]*종결 대기[^]*종료 미완료[^]*기한 14일 초과[^]*폐기 후 남은 설정/);
+  assert.deepEqual(Object.keys(out.charts), ["c-term-stage", "c-term-grade"]);
 });
 
 test("브라우저 배포 소스는 개발 주석을 포함하지 않고 만료창은 라벨과 값이다", () => {
@@ -402,23 +406,24 @@ test("처리함 배지는 대기 전체, 도입 심사·종료·연결 통제 �
 test("옛 주소 네 종류와 세부 탭·필터를 새 위치로 보낸다", () => {
   const ui = build();
   for (const [page, tab, target, nextTab] of [
-    ["overview", "planes", "servers", "items"],
+    ["overview", "planes", "connections", "items"],
     ["overview", "traffic", "activity", "live"],
     ["audit", "", "activity", "live"], ["audit", "incidents", "activity", "incidents"],
     ["audit", "siem", "activity", "audit"], ["activity", "events", "activity", "live"], ["activity", "siem", "activity", "audit"],
     ["activity", "incidents", "activity", "incidents"], ["activity", "alerts", "activity", "alerts"],
     ["security", "", "activity", "alerts"], ["security", "integration", "activity", "audit"], ["security", "incidents", "activity", "incidents"],
-    ["security", "alerts", "activity", "alerts"], ["consent", "history", "my", "consent"], ["coverage", "", "servers", "items"],
-    ["coverage", "devices", "endpoints", "devices"], ["coverage", "shadow", "endpoints", "shadow"],
-    ["coverage", "vendor", "servers", "vendor"], ["sbom-impact", "", "servers", "servers"], ["intake", "impact", "servers", "servers"],
-    ["servers", "shadow", "endpoints", "shadow"],
+    ["security", "alerts", "activity", "alerts"], ["consent", "history", "my", "consent"], ["coverage", "", "connections", "items"],
+    ["coverage", "devices", "endpoints", "devices"], ["coverage", "shadow", "connections", "shadow"],
+    ["coverage", "vendor", "connections", "vendor"], ["sbom-impact", "", "servers", "supply"], ["intake", "impact", "servers", "supply"],
+    ["servers", "shadow", "connections", "shadow"], ["servers", "items", "connections", "items"], ["servers", "vendor", "connections", "vendor"],
+    ["endpoints", "shadow", "connections", "shadow"], ["servers", "capabilities", "servers", "tools"],
     ["servers", "contract", "servers", "servers"],
     ["people", "devices", "endpoints", "devices"], ["people", "managed", "endpoints", "managed"],
     ["approvals", "", "inbox", null], ["approvals", "queue", "inbox", null], ["overview", "approvals", "inbox", null],
     ["approvals", "unsent", "inbox", null], ["activity", "unsent", "inbox", null], ["overview", "unsent", "inbox", null],
     ["approvals", "history", "inbox", null], ["activity", "approval-history", "inbox", null],
     ["approvals", "consent", "my", "consent"],
-    ["policy", "capabilities", "servers", "capabilities"],
+    ["policy", "capabilities", "servers", "tools"],
   ]) {
     const at = { page, arg: "", query: new URLSearchParams({ t: tab, q: "a & b", before: "42" }) };
     const out = ui.canonicalRoute(at);
@@ -478,37 +483,42 @@ test("관리자 통합 탭은 기존 데이터와 필터·작업 버튼을 유�
   assert.match(consentBody, /확인할 요청 없음/);
   assert.match(consentBody, /동의 기록/);
   const servers = await ui.ROUTES.servers("", "servers", new URLSearchParams());
-  assert.deepEqual(Array.from(servers.html.tabs, (item) => item.key), ["servers", "tools", "capabilities", "items", "vendor"]);
+  assert.deepEqual(Array.from(servers.html.tabs, (item) => item.key), ["servers", "tools", "supply"]);
   assert.doesNotMatch(String(servers.html.head), /통제 범위/);
-  assert.match(String(servers.html.head), /AI 연결 관리/);
+  assert.match(String(servers.html.head), /MCP 서버/);
   assert.equal(ui.ROUTES.coverage, undefined);
   const people = await ui.ROUTES.endpoints("", "devices");
   const devices = people.html.tabs.find((item) => item.key === "devices");
-  assert.deepEqual(Array.from(people.html.tabs, (item) => item.key), ["devices", "shadow", "managed"]);
-  assert.match(String(people.html.tabs[1].body), /엔드포인트 MCP 설정[^]*엔드포인트 수신기[^]*관측 수집 상태[^]*엔드포인트 차단/);
-  assert.match(String(devices.body), /새 PC 활성화[^]*통제 점검[^]*엔드포인트 MCP 설정/);
-  const serversWithImpact = await ui.ROUTES.servers("", "servers", new URLSearchParams("impact=1&package=alpha&range=%3E%3D1.0.0"));
-  assert.equal(serversWithImpact.html.tabs.length, 5);
-  assert.match(String(serversWithImpact.html.tabs[0].body), /server-impact[^]*open[^]*공급망 영향 조회[^]*value="alpha"[^]*sbom-impact-stop/);
+  assert.deepEqual(Array.from(people.html.tabs, (item) => item.key), ["devices", "managed"]);
+  assert.match(String(devices.body), /새 PC 활성화/);
+  const links = await ui.ROUTES.connections("", "shadow", new URLSearchParams());
+  assert.deepEqual(Array.from(links.html.tabs, (item) => item.key), ["items", "shadow", "vendor"]);
+  ui.responses["/api/supply-chain/impact"] = { counts: { affected: 1, unaffected: 0, unknown: 0, no_data: 0 }, servers: [{ server_id: "docs", server_name: "Docs", judgement: "영향 있음", evidence: [{ version: "1.2.0" }] }] };
+  const serversWithImpact = await ui.ROUTES.servers("", "supply", new URLSearchParams("package=alpha&range=%3E%3D1.0.0"));
+  assert.match(String(serversWithImpact.html.tabs[2].body), /영향 서버[^]*sbom-impact-stop[^]*Docs[^]*영향 있음[^]*1\.2\.0[^]*server-suspend/);
+  assert.equal(serversWithImpact.html.tabs.length, 3);
   const intake = await ui.ROUTES.intake("", "", new URLSearchParams());
-  assert.deepEqual(Array.from(intake.html.tabs, (t) => t.key), ["list", "requests", "new", "approved"]);
+  assert.deepEqual(Array.from(intake.html.tabs, (t) => t.key), ["review", "list", "requests", "new"]);
 });
 
 test("MCP 서버에 계약 상태와 확인 시각을 통합하고 상세의 승인본 갱신을 유지한다", async () => {
   const ui = build(true, {"/gw/registry": {servers:[{id:"docs",display_name:"Docs",status:"DRIFT",status_reason:"도구 정의 변경",last_seen_at:"2026-11-01T00:00:00Z",lifecycle:"OPERATING"}],tools:[],registrations:{},usage_relationships:[]}});
   const result = await ui.ROUTES.servers("docs", "servers", new URLSearchParams());
-  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["MCP 서버", "도구", "접근 권한", "연결 통제 현황", "기본 기능 및 커넥터"]);
-  assert.match(String(result.html.tabs[0].body), /마지막 확인[^]*도구 정의 변경/);
+  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["서버", "도구·권한", "공급망"]);
+  assert.match(String(result.html.tabs[0].body), /계약 변경/);
   let detail;
   ui.policyDrawer((title, controls, tabs) => { detail = {controls:String(controls),tabs}; });
-  result.after();
+  result.after(); await new Promise((resolve) => setTimeout(resolve, 0));
   assert.match(detail.controls, /approve-contract[^]*승인본 갱신/);
   assert.match(detail.controls, /도구 정의 변경/);
+  assert.match(detail.controls, /긴급 중지/); assert.doesNotMatch(detail.controls, /server-deregister|위치 심사|등록 해제/);
+  assert.deepEqual(Array.from(detail.tabs, (t) => t.label), ["개요", "도구·범위", "사용 대상", "호출 추이", "종료·폐기"]);
   assert.match(String(detail.tabs[0].body), /마지막 확인/);
   assert.doesNotMatch(String(result.html.head), /catalog-refresh|registry-export|connector-policy/);
   assert.match(String(result.html.tabs[0].body), /catalog-refresh[^]*도구 정의 다시 확인[^]*data-registry-export[^]*도입 승인 등록부 내보내기[^]*value="csv"[^]*value="json"/);
   assert.doesNotMatch(String(result.html.tabs[0].body), /connector-policy/);
-  assert.match(String(result.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
+  const links = await ui.ROUTES.connections("", "vendor", new URLSearchParams());
+  assert.match(String(links.html.tabs.find((t) => t.key === "vendor").body), /connector-policy[^]*커넥터 설정 내보내기/);
 });
 
 test("대시보드는 호출 승인 탭에서만 목록을 표시하고 각 관리 작업으로의 이동을 제공한다", async () => {
@@ -569,8 +579,9 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.equal(overview.charts["c-ov-matrix"], undefined);
   assert.match(String(overview.html.tabs[0].body), /<td>연결 통제 점검<\/td><td>1건<\/td>/);
   assert.match(String(overview.html.tabs[0].body), /data-href="#\/servers\?t=items&amp;state=bypass_possible"/);
-  const result = await ui.ROUTES.servers("", "items", new URLSearchParams());
+  const result = await ui.ROUTES.connections("", "items", new URLSearchParams());
   const body = String(result.html.tabs.find((t) => t.key === "items").body);
+  assert.match(String(result.html.kpis), /미적용 PC[^]*게이트웨이 통제[^]*엔드포인트 통제[^]*벤더 통제[^]*관찰 및 미등록[^]*조직 통제 의존/);
   assert.match(body, /연결 유형별 통제 현황[^]*연결 항목 수[^]*연결별 통제 상태/);
   assert.match(body, /id="c-connections-matrix"/);
   let captured;
@@ -580,7 +591,7 @@ test("통제 분포는 AI 연결 관리에서만 표시하고 그래프 선택�
   assert.equal(captured.series[5].data[2], 1);
   assert.equal(captured.series.reduce((sum, s) => sum + s.data.reduce((a, b) => a + b, 0), 0), 2);
   captured.options.onClick({ dataIndex: 2, seriesIndex: 5 });
-  assert.equal(ui.context.location.hash, "#/servers?t=items&class=vendor_native_connector&state=bypass_possible");
+  assert.equal(ui.context.location.hash, "#/connections?t=items&class=vendor_native_connector&state=bypass_possible");
 });
 
 test("호출 승인 전체 건수와 페이지는 요약에 목록을 중복 표시하지 않는다", async () => {
@@ -957,7 +968,7 @@ test("종료 조치 필터와 페이지 이동을 서버에 전달하고 기한 
   const result = await ui.ROUTES.termination("", "cases", new URLSearchParams("attention=required&page=2"));
   const cases = result.html.tabs.find((t) => t.key === "cases");
   assert.equal(cases.n, 101);
-  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["종료 대상", "종료 처리"]);
+  assert.deepEqual(Array.from(result.html.tabs, (t) => t.label), ["종료 처리"]);
   assert.match(String(cases.body), /종료 조치 필요/);
   assert.match(String(cases.body), /attention=required&amp;page=1/);
   assert.match(String(cases.body), /attention=required&amp;page=3/);
@@ -1034,12 +1045,11 @@ test("접근 권한은 AI 연결 관리에서만 조회하고 정책은 기존 �
     capabilities: [{ id: "permission-1", principals: ["alice"], servers: ["docs"], actions: ["r", "w"], server_actions:{docs:["r"]}, path_roots: ["/docs"], tables:["public.products"], tools:["read"], valid_until: null }],
     runtime_envelopes: [{ server_id: "docs", principals: ["*"], tools: { read_file: "r" }, valid_until: null }],
   } });
-  const connections = await ui.ROUTES.servers("", "capabilities", new URLSearchParams());
-  const access = connections.html.tabs.find((tab) => tab.key === "capabilities");
-  assert.equal(access.label, "접근 권한");
-  assert.equal(access.n, 2);
+  const connections = await ui.ROUTES.servers("", "tools", new URLSearchParams());
+  const access = connections.html.tabs.find((tab) => tab.key === "tools");
+  assert.equal(access.label, "도구·권한");
   assert.match(String(access.body), /permission-1[^]*alice[^]*docs[^]*\/docs[^]*read_file/);
-  assert.match(String(access.body), /권한 출처[^]*허용 행위[^]*허용 자원[^]*허용 도구/);
+  assert.match(String(access.body), /출처[^]*허용 행위[^]*허용 자원[^]*허용 도구/);
   assert.match(String(access.body), /개별 접근 권한[^]*docs: 읽기[^]*public.products[^]*도입 승인/);
   assert.doesNotMatch(String(access.body), /쓰기/);
   ui.calls.length = 0;
@@ -1054,7 +1064,7 @@ test("커넥터 전체 설정과 개별 항목을 분리하고 전체 차단 표
   const ui = build(true, {"/api/connectors": {summary:{pending:0,expired:0},
     builtins:[{key:"all",label:"전체 커넥터",kind:"connector",harness:"claude",state:"denied"}],
     items:[{key:"claude:connector:docs",names:["Docs"],kinds:["connector"],harness:"claude",builtin:true,state:"approved",active_pcs:2,people:1}]}});
-  const out = await ui.ROUTES.servers("", "vendor", new URLSearchParams());
+  const out = await ui.ROUTES.connections("", "vendor", new URLSearchParams());
   const body = String(out.html.tabs.find((t) => t.key === "vendor").body);
   assert.match(body, /커넥터 전체 사용 설정[^]*개별 커넥터[^]*Docs/);
   assert.match(body, /승인 상태[^]*통제 적용 상태/);
@@ -1070,15 +1080,15 @@ test("연결 통제 상세에서 해당 추가 연결의 승인 관리로 이동
       {key:"unknown",name:"Unknown",class:"shadow_or_unknown",state:"unknown_not_enrolled"}],devices:[],summary:{devices:{bypass_possible:0}}},
     "/api/connectors": {items:[{key,names:["Docs"],kinds:["plugin"],harness:"claude",builtin:false,state:"pending",holders:[]}],summary:{pending:1,expired:0}}
   });
-  const out = await ui.ROUTES.servers("", "items", new URLSearchParams());
+  const out = await ui.ROUTES.connections("", "items", new URLSearchParams());
   assert.match(String(out.html.tabs.find((t) => t.key === "items").body), /연결별 통제 상태/);
   assert.match(String(out.html.tabs.find((t) => t.key === "vendor").body), /추가 연결 승인 관리/);
   let controls;
   ui.policyDrawer((title, content) => { controls = String(content); });
   await ui.ACTIONS.integration({dataset:{key}});
   const query = new URLSearchParams({t:"vendor",connector:key});
-  assert.ok(controls.includes(("#/servers?" + query).replaceAll("&", "&amp;")));
-  const target = await ui.ROUTES.servers("", "vendor", query);
+  assert.ok(controls.includes(("#/connections?" + query).replaceAll("&", "&amp;")));
+  const target = await ui.ROUTES.connections("", "vendor", query);
   target.after();
   assert.match(controls, /connector-decide[^]*data-key="claude:host:docs.example"/);
   await ui.ACTIONS.integration({dataset:{key:"unknown"}});
@@ -1231,13 +1241,11 @@ test("MCP 설정 다음 페이지는 사용자 화면의 전체 범위와 서버
   assert.ok(!ui.calls[0].includes("classification")); assert.match(ui.calls[1], /classification=shadow%2Cretired-residue/);
 });
 
-test("전체 설정과 발견 항목의 페이지 커서는 독립적이다", async () => {
+test("미등록 MCP 표의 페이지 커서는 미등록 범위로 이어진다", async () => {
   const ui = build();
-  ui.setCurrent({ page: "endpoints", arg: "", query: new URLSearchParams("full_entries_cursor=&full_entries_cursor=all-2&full_entries_page=1&entries_cursor=&entries_cursor=shadow-2&entries_page=1") });
-  ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=all-2"] = { rows: [], next_cursor: "all-3" };
+  ui.setCurrent({ page: "connections", arg: "", query: new URLSearchParams("entries_cursor=&entries_cursor=shadow-2&entries_page=1") });
   ui.responses["/gw/endpoint/inventory/entries?limit=50&cursor=shadow-2&classification=shadow%2Cretired-residue"] = { rows: [], next_cursor: "shadow-3" };
-  await ui.ROUTES.endpoints("", "shadow");
-  assert.equal(ui.covPaging.full_entries.next, "all-3");
+  await ui.ROUTES.connections("", "shadow");
   assert.equal(ui.covPaging.entries.next, "shadow-3");
 });
 
@@ -1257,7 +1265,7 @@ test("도입 신청은 역할별 탭 순서와 기본 탭을 적용하고 직접
   for (const admin of [true, false]) {
     const ui = build(admin);
     const out = await ui.ROUTES.intake("", "");
-    const order = admin ? ["list", "requests", "new", "approved"] : ["approved", "new", "list"];
+    const order = admin ? ["review", "list", "requests", "new"] : ["approved", "new", "list"];
     assert.deepEqual(Array.from(out.html.tabs, (t) => t.key), order);
     assert.equal(out.html.active, order[0]);
     const selected = await ui.ROUTES.intake("", "new");
@@ -1434,19 +1442,30 @@ test("사용 기한은 실제 날짜로 계산하고 없거나 잘못된 날짜�
   for (const value of [null, {}, { valid_until: "invalid" }]) assert.equal(String(ui.validityChip(value)).replace(/<[^>]*>/g, ""), "—");
 });
 
-test("미등록 MCP는 혼합 합계 없이 설정·수신기·차단 건수를 분리한다", async () => {
+test("미등록 MCP는 MCP별로 묶어 PC 수와 조치 버튼을 보이고 필터 결과를 구분한다", async () => {
   const ui = build();
-  Object.assign(ui.inventory.pages.entries, { total: 7 });
-  Object.assign(ui.inventory.pages.listeners, { total: 3 });
-  Object.assign(ui.inventory.pages.os_events, { total: 0 });
-  const shadow = (await ui.ROUTES.endpoints("", "shadow", new URLSearchParams())).html.tabs.find((item) => item.key === "shadow");
-  assert.equal(shadow.n, undefined);
+  Object.assign(ui.inventory.pages.entries, { total: 3 });
+  ui.inventory.entries = [
+    { id: 1, endpoint_id: "ep1", server_label: "Docs", transport: "stdio", endpoint_ref: "npx docs", classification: "shadow", reported_at: "2026-11-10T00:00:00Z", config_path: "/a" },
+    { id: 2, endpoint_id: "ep2", server_label: "Docs", transport: "stdio", endpoint_ref: "npx docs", classification: "shadow", reported_at: "2026-11-11T00:00:00Z", config_path: "/b" },
+    { id: 3, endpoint_id: "ep1", server_label: "Old", transport: "sse", endpoint_ref: "https://old", classification: "retired-residue", reported_at: "2026-11-09T00:00:00Z", config_path: "/c" }];
+  ui.inventory.agents = [{ endpoint_id: "ep1", shadow: 2, status: "active" }, { endpoint_id: "ep2", shadow: 1, status: "active" }, { endpoint_id: "ep3", shadow: 0, status: "active" }];
+  const out = await ui.ROUTES.connections("", "shadow", new URLSearchParams());
+  const shadow = out.html.tabs.find((item) => item.key === "shadow");
+  assert.equal(shadow.n, 2);
   const markup = String(shadow.body);
-  for (const [label, value] of [["설정 기록", 7], ["수신기 관측", 3], ["엔드포인트 차단", 0]]) assert.ok(markup.includes(`<dt>${label}</dt><dd>${value}</dd>`));
-  assert.match(markup, /표시 서버 0개/);
-  const items = (await ui.ROUTES.servers("", "items", new URLSearchParams())).html.tabs.find((item) => item.key === "items");
+  assert.match(markup, /<th>MCP<\/th><th>연결<\/th><th class="num">PC<\/th><th>최근 발견<\/th><th>분류<\/th>/);
+  assert.match(markup, /Docs[^]*<td class="num">2<\/td>/); assert.match(markup, /data-act="shadow-group" data-index="0"/);
+  assert.match(String(out.html.kpis), /미적용 PC<\/div><div class="value">2</);
+  let drawer;
+  ui.policyDrawer((title, controls, tabs) => { drawer = { title, controls: String(controls), tabs }; });
+  await ui.ACTIONS["shadow-group"]({ dataset: { index: "0" } });
+  assert.equal(drawer.title, "Docs"); assert.match(drawer.controls, /도입 신청 만들기/); assert.match(drawer.controls, /#\/intake\?t=new&amp;name=Docs/);
+  assert.deepEqual(Array.from(drawer.tabs, (tab) => tab.key), ["pcs", "files", "listeners", "denials"]);
+  assert.match(String(drawer.tabs[0].body), /data-act="device-quarantine" data-id="ep1"[^]*data-id="ep2"/);
+  const items = (await ui.ROUTES.connections("", "items", new URLSearchParams())).html.tabs.find((item) => item.key === "items");
   assert.match(String(items.body), /항목 없음/);
-  const filtered = (await ui.ROUTES.servers("", "items", new URLSearchParams("q=missing"))).html.tabs.find((item) => item.key === "items");
+  const filtered = (await ui.ROUTES.connections("", "items", new URLSearchParams("q=missing"))).html.tabs.find((item) => item.key === "items");
   assert.match(String(filtered.body), /조건에 맞는 결과 없음/);
 });
 
@@ -1548,4 +1567,65 @@ test("기존 신청 검색은 실패와 복구를 구분하고 늦은 실패가 
   ui.context.searchInput({ target: input }); await tick();
   assert.match(ui.node("#catalog-results").innerHTML, /조건에 맞는 결과 없음/);
   assert.doesNotMatch(ui.node("#catalog-results").innerHTML, /조회 실패/);
+});
+
+const intakeFixture = () => {
+  const request = { id: "req1", display_name: "문서 검색", status: "VALIDATED", intake_kind: "remote-endpoint", endpoint_url: "https://example.test/mcp", purpose: "조회",
+    evidence: {}, risk: { status: "ok", tier: "high", approvals: 1, required: 2 }, internal_repo_url: "/git/mcp/docs" };
+  return {
+    "/api/mcp-requests/req1/report": { request, reports: [], artifacts: [], events: [], risk: null, risk_acceptances: [], exit_terms_discovery: null },
+    "/api/mcp-requests/req1/approval-preview": { request, gate: { scanners: [], critical: null }, proposal_sha256: "abc",
+      proposal: { endpoint: "https://example.test/mcp", server_id: "docs-1234", data_class: "public", risk: { tier: "high" }, tools: { lookup: "r" },
+        catalog: { tools: [{ name: "lookup", description: "조회", warnings: [] }] }, supplier_assurance: { legal_entity: "예시 주식회사" },
+        parameter_constraints: { lookup: {} }, tool_reviews: { lookup: {} }, risk_input: {}, address_tools: [], blockers: [] } },
+    "/api/mcp-requests/req1/approve-and-register": { message: "승인했습니다." },
+  };
+};
+
+test("도입 심사 상세는 검사·범위·공급자·출처를 한 화면에 두고 하단 바에서 승인한다", async () => {
+  const ui = build(true, intakeFixture());
+  ui.context.URL = URL;
+  const out = await ui.ROUTES.intake("req1", "");
+  const page = out.html;
+  assert.deepEqual(Array.from(page.tabs, (t) => t.key), ["summary", "scope", "risk", "supplier", "source", "records"]);
+  assert.match(String(page.tabs[0].body), /제안값[^]*docs-1234/);
+  assert.match(String(page.kpis), /위험 등급[^]*높음[^]*승인[^]*1\/2/);
+  assert.match(String(page.head), /문서 검색/); assert.match(String(page.head), /href="#\/intake\?t=review"/);
+  const tab = (key) => String(page.tabs.find((t) => t.key === key).body);
+  assert.match(tab("scope"), /id="intake-approve"[^]*name="approved_tool" value="lookup"/);
+  assert.match(tab("supplier"), /예시 주식회사/); assert.doesNotMatch(tab("supplier"), /확인 안 됨/);
+  assert.match(tab("source"), /\/git\/mcp\/docs[^]*사내 저장소/);
+  const dock = String(out.dock);
+  assert.match(dock, /name="valid_days"/); assert.match(dock, /data-act="intake-reject" data-id="req1"/); assert.match(dock, /data-act="intake-confirm" data-id="req1"/);
+  assert.doesNotMatch(dock + tab("scope"), /location_|위치/);
+  ui.approvalActions(async () => null);
+  const values = { valid_days: "90", audience: "all" };
+  ui.context.FormData = class { get(key) { return values[key] ?? null; } getAll(key) { return key === "approved_tool" ? ["lookup"] : []; } };
+  await ui.ACTIONS["intake-confirm"]({ dataset: { id: "req1" } });
+  const sent = JSON.parse(ui.requests.find((r) => r.url.endsWith("/approve-and-register")).body);
+  assert.deepEqual([sent.tools, sent.valid_days, sent.audience, sent.proposal_sha256], [["lookup"], 90, "all", "abc"]);
+  assert.deepEqual(sent.supplier_assurance, { legal_entity: "예시 주식회사" }); assert.ok(!("residency" in sent));
+  assert.equal(ui.context.location.hash, "#/servers/docs-1234");
+});
+
+test("본인 신청과 이미 등록된 신청은 승인 바 없이 읽기만 한다", async () => {
+  const fixture = intakeFixture();
+  fixture["/api/mcp-requests/req1/report"].request.own = true;
+  const ui = build(true, fixture);
+  const out = await ui.ROUTES.intake("req1", "scope");
+  assert.equal(out.dock, ""); assert.equal(out.html.active, "scope");
+  assert.ok(!ui.calls.includes("/api/mcp-requests/req1/approval-preview"));
+});
+
+test("서버 서랍의 긴급 중지·재개와 미등록 PC 격리는 사유를 받아 서버 API를 호출한다", async () => {
+  const ui = build(true, { "/gw/ops/servers/docs/suspend": {}, "/gw/ops/servers/docs/resume": {}, "/gw/endpoint/devices/ep1/quarantine": {} });
+  ui.approvalActions(async () => ({ get: () => "점검을 위해 중지" }));
+  await ui.ACTIONS["server-suspend"]({ dataset: { id: "docs", name: "Docs" } });
+  await ui.ACTIONS["server-resume"]({ dataset: { id: "docs", name: "Docs" } });
+  await ui.ACTIONS["device-quarantine"]({ dataset: { id: "ep1", name: "pc" } });
+  const sent = (suffix) => ui.requests.find((r) => r.url.endsWith(suffix));
+  assert.deepEqual(JSON.parse(sent("/gw/ops/servers/docs/suspend").body), { reason: "점검을 위해 중지" });
+  assert.deepEqual(JSON.parse(sent("/gw/ops/servers/docs/resume").body), { note: "점검을 위해 중지" });
+  assert.deepEqual(JSON.parse(sent("/gw/endpoint/devices/ep1/quarantine").body), { note: "점검을 위해 중지" });
+  assert.equal(ui.ACTIONS["server-deregister"], undefined);
 });

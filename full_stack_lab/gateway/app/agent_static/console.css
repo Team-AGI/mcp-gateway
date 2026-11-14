@@ -362,3 +362,10 @@ table.data.rows-32 tr.clickable:hover .chev{color:var(--brand)}
 .user-menu .menu a{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;font-size:14.58px;color:var(--ink-2);white-space:nowrap}
 .user-menu .menu a:hover{background:var(--panel-2);color:var(--ink);text-decoration:none}
 .user-menu .menu a svg{width:16px;height:16px;flex:none}.user-menu .menu a .ext,.user-menu .menu a .count{margin-left:auto}
+/* MCP 수명주기·사람 화면: 목록 행 40px, 카드 아래 차트 줄 */
+#view[data-page="servers"] .data td,#view[data-page="connections"] .data td,#view[data-page="termination"] .data td,
+#view[data-page="people"] .data td,#view[data-page="endpoints"] .data td,#view[data-page="intake"] .data td{height:40px;padding-top:6px;padding-bottom:6px;vertical-align:middle}
+.chart-row{margin-bottom:16px}.chart-row .chart.is-empty{padding:24px 0}
+.row-actions.docked{position:sticky;bottom:0;z-index:2;padding:12px 16px;background:var(--panel);border-top:1px solid var(--line);margin:16px -16px -16px;justify-content:flex-end}
+.rail{display:flex;gap:2px;height:6px;border-radius:3px;overflow:hidden;background:var(--line);min-width:96px}.rail>i{flex:1;background:var(--line-2)}.rail>i.done{background:var(--allow)}.rail>i.now{background:var(--brand)}
+.row-actions.docked{align-items:center;gap:12px}.row-actions.docked>label{display:flex;align-items:center;gap:8px;margin:0;white-space:nowrap}.row-actions.docked>label select,.row-actions.docked>label input{width:auto;min-width:120px}
