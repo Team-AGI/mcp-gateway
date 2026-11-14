@@ -1815,6 +1815,7 @@ export const EN = {
   "관리": "Manage",
   "호출 기록을 찾을 수 없습니다.": "Call record not found.",
   "미등록 MCP 보기": "View unregistered MCP",
+  "내 동의": "My consents",
   "관련 호출": "Related calls",
   "가입·기기": "Sign-ups & devices",
   "기기 활성화": "Device activation",
@@ -1829,4 +1830,7 @@ export const EN = {
   "같은 사용자·서버 최근 호출": "Recent calls by this user on this server",
   "전송 시각": "Sent at",
   "호출 기록 보기": "View call record",
+  "동의 필요": "Consent required",
+  "미연결": "Not connected",
+  "진행 중 신청": "Requests in progress",
 };

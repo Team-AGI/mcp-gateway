@@ -5,6 +5,7 @@ import { mergeRows, harnessLabel, DECISIONS,
   originLabel, denialClass, provenanceView, countView, pager, denialCount } from "./console-state.mjs";
 import * as charts from "./charts.mjs";
 import { inboxRoute, inboxActions, loadInbox, alertCallsHref } from "./inbox.mjs";
+import { myRoute } from "./my.mjs";
 
 const TOKEN_KEY = "mcp-console-token";
 const THEME_KEY = "mcp-console-theme";
@@ -1177,7 +1178,7 @@ function relatedBody(related) {
 function decisionAction(r) {
   if (!["Block", "Alert", "Approval"].includes(r.decision)) return "";
   const consent = /CONSENT/.test(r.policy_id || "");
-  const href = consent ? `#/consent?${new URLSearchParams({ server: r.server || r.server_id || "", tool: r.tool || r.tool_name || "" })}`
+  const href = consent ? `#/my?${new URLSearchParams({ t: "consent", server: r.server || r.server_id || "", tool: r.tool || r.tool_name || "" })}`
     : /SHADOW/.test(r.policy_id || "") ? shadowLink(r.device_id || r.evidence?.endpoint_id, r.evidence?.record_kind, r.evidence?.record_id) : "";
   return kv([["사유", r.reason || policyLabel(r.policy_id) || "—"],
     ["실행", r.outcome_axes?.execution || (r.executed ? "실행됨" : r.attempted ? "실행 미확인" : "실행 안 함")],
@@ -1965,28 +1966,27 @@ async function consentTabs(query = new URLSearchParams()) {
       <td>${c.purpose || NONE}<span class="sub">외부 목적지 ${destinationText(c.terms?.destinations)}${c.terms?.inputs ? ` · 입력 ${c.terms.inputs.join(", ") || "없음"}` : ""}</span></td>
       <td>${chip(...(CONSENT_STATUS[c.status] || ["", "—"]))}</td>
       <td class="small nowrap">${when(c.decided_at || c.requested_at)}${c.status === "GRANTED" && c.expires_at ? html`<span class="sub">${when(c.expires_at)}까지</span>` : ""}</td>
-      <td class="num nowrap">${c.status === "PENDING" ? html`${button(c, "deny", "거부", "danger")}${button(c, "grant", "동의", "primary")}`
+      <td class="num nowrap">${c.status === "PENDING" ? html`${button(c, "deny", "거부")}${button(c, "grant", "동의")}`
         : c.status === "GRANTED" ? button(c, "revoke", "철회") : ["DENIED", "REVOKED"].includes(c.status) ? button(c, "grant", "동의") : ""}</td></tr>`)}
     </tbody></table>`;
   return [
     { key: "pending", label: "확인 필요", n: servers.size, hot: servers.size > 0,
       body: servers.size ? html`<div class="stack">${[...servers].map(([id, rows]) => panel(id, html`
-        <div class="row-actions">${chip("alert", `요청 ${rows.length}건`)}${serverButton(id, rows, "deny", "모두 거부", "danger")}${serverButton(id, rows, "grant", "모두 허용", "primary")}</div>
+        <div class="row-actions">${chip("alert", `요청 ${rows.length}건`)}${serverButton(id, rows, "deny", "모두 거부")}${serverButton(id, rows, "grant", "모두 허용")}</div>
         ${table(rows)}`))}</div>` : empty("확인할 요청 없음", { filtered: query.has("server") || query.has("tool") }) },
     { key: "history", label: "이력", n: decided.length, body: panel("동의 기록", decided.length ? table(decided) : empty("기록 없음", { filtered: query.has("server") || query.has("tool") }), { flush: true }) },
   ];
 }
-ROUTES.consent = async (_, tab, query = new URLSearchParams()) => page({ head: head("도구 이용 동의"), active: tab || "pending", tabs: await consentTabs(query) });
 
 
 let approvedMcpSearch = "";
-function approvedMcpTable(servers, query = "") {
+function approvedMcpTable(servers, query = "", consentOf = null) {
   if (!servers.length) return empty("사용 가능한 MCP 없음");
   const searchText = (s) => [s.display_name, s.server_id, s.purpose, ...(s.tools || []).flatMap((tool) => [tool.name, tool.purpose])].filter(Boolean).join(" ");
   const term = query.trim().toLocaleLowerCase();
-  return html`<table class="data"><thead><tr><th>MCP</th><th>사용 목적</th><th>제공 도구</th><th>사용 기한</th><th></th></tr></thead>
+  return html`<table class="data"><thead><tr><th>MCP</th><th>사용 목적</th><th>제공 도구</th><th>사용 기한</th>${consentOf ? html`<th>내 동의</th>` : ""}<th></th></tr></thead>
     <tbody id="available-mcp">${servers.map((s) => html`<tr data-search="${searchText(s)}" ${searchText(s).toLocaleLowerCase().includes(term) ? "" : raw("hidden")}>
-      <td><b>${s.display_name || s.server_id || "—"}</b>${s.execution === "reapproval" ? html`<span class="sub">${chip("alert", "엔드포인트 실행으로 재승인 필요")}</span>` : ""}</td><td>${s.purpose || "—"}</td><td class="num">${(s.tools || []).length}</td><td class="nowrap">${when(s.valid_until)}</td>
+      <td><b>${s.display_name || s.server_id || "—"}</b>${s.execution === "reapproval" ? html`<span class="sub">${chip("alert", "엔드포인트 실행으로 재승인 필요")}</span>` : ""}</td><td>${s.purpose || "—"}</td><td class="num">${(s.tools || []).length}</td><td class="nowrap">${when(s.valid_until)}</td>${consentOf ? html`<td>${consentOf(s.server_id)}</td>` : ""}
       <td><button class="btn sm" data-act="available-mcp" data-id="${s.server_id}">이용 방법</button></td></tr>`)}</tbody></table>
       <p class="empty" role="status" data-list-empty="available-mcp" ${servers.some((s) => searchText(s).toLocaleLowerCase().includes(term)) ? raw("hidden") : ""}>조건에 맞는 결과 없음</p>`;
 }
@@ -2013,6 +2013,32 @@ function showAvailableMcp(server) {
   ]);
 }
 
+function intakeNewBody(pre, fromRepo, catalog) {
+  const opt = (value, label, on) => html`<option value="${value}" ${on ? raw("selected") : ""}>${label}</option>`;
+  return html`<div class="stack">
+          ${panel("새 신청", html`<form class="stack form" data-form="intake"><div data-intake-status role="status" aria-live="polite"></div>
+          <fieldset><legend>서비스</legend>
+            <label>서비스 이름<input name="display_name" aria-invalid="false" aria-describedby="intake-display_name-error" required minlength="2" maxlength="80" placeholder="GitHub MCP" value="${pre.name}" /><span id="intake-display_name-error" data-field-error="display_name" role="alert"></span></label>
+            <label>사용 목적<textarea name="purpose" aria-invalid="false" aria-describedby="intake-purpose-error" required minlength="10" maxlength="1000">${pre.purpose}</textarea><span id="intake-purpose-error" data-field-error="purpose" role="alert"></span></label>
+          </fieldset>
+          <fieldset><legend>연결</legend><div class="grid c2">
+            <label>유형<select name="intake_kind" aria-invalid="false" aria-describedby="intake-intake_kind-error" data-intake-kind>${opt("remote-endpoint", "원격 MCP", !fromRepo)}${opt("repository", "소스 코드", fromRepo)}</select><span id="intake-intake_kind-error" data-field-error="intake_kind" role="alert"></span></label>
+             <label>연결 방식<select name="requested_transport" aria-invalid="false" aria-describedby="intake-requested_transport-error">${Object.entries(TRANSPORT).map(([value, label]) => opt(value, label, value === (fromRepo ? "stdio" : "streamable-http")))}</select><span id="intake-requested_transport-error" data-field-error="requested_transport" role="alert"></span></label>
+            <label data-intake-field="remote-endpoint" ${fromRepo ? raw("hidden") : ""}>MCP 주소<input name="endpoint_url" aria-invalid="false" aria-describedby="intake-endpoint_url-error" type="url" maxlength="500" placeholder="https://…/mcp" value="${fromRepo ? "" : pre.source}" /><span id="intake-endpoint_url-error" data-field-error="endpoint_url" role="alert"></span></label>
+            ${pre.asked ? html`<input type="hidden" name="endpoint_request_id" value="${pre.asked}" />` : ""}
+            <label data-intake-field="repository" ${fromRepo ? "" : raw("hidden")}>저장소<input name="repository_url" aria-invalid="false" aria-describedby="intake-repository_url-error" type="url" maxlength="300" placeholder="https://github.com/org/repo" value="${fromRepo ? pre.source : ""}" /><span id="intake-repository_url-error" data-field-error="repository_url" role="alert"></span></label>
+          </div></fieldset>
+          <label>데이터 등급<select name="data_class" aria-invalid="false" aria-describedby="intake-data_class-error">${Object.entries(DATA_CLASS).map(([value, label]) => opt(value, label, value === "nonimportant"))}</select><span id="intake-data_class-error" data-field-error="data_class" role="alert"></span></label>
+          <fieldset data-intake-field="remote-endpoint"><legend>필요한 도구</legend>
+            <button class="btn" type="button" data-act="intake-discover">도구 불러오기</button>
+            <div data-requested-tools></div><span id="intake-requested_tool-error" data-field-error="requested_tool" role="alert"></span>
+          </fieldset>
+          <div class="row-actions center"><button class="btn primary" type="submit">신청</button></div></form>`)}
+          <details class="panel"><summary>기존 신청 검색</summary><div class="filters"><input class="grow" type="search" data-catalog-search
+            aria-label="MCP 이름 또는 저장소 검색" placeholder="MCP 이름 또는 저장소" /></div>
+            <div id="catalog-results" aria-live="polite">${catalogResults(catalog || { requests: [], registry: [] })}</div></details></div>`;
+}
+
 ROUTES.intake = async (_, tab, query = new URLSearchParams()) => {
   const tabOrder = viewer.admin ? ["list", "requests", "new", "approved"] : ["approved", "new", "list"];
   const [{ requests }, { servers }, catalog, asked] = await Promise.all([api("/api/mcp-requests"), api("/api/approved-mcp"),
@@ -2020,7 +2046,6 @@ ROUTES.intake = async (_, tab, query = new URLSearchParams()) => {
     viewer.admin ? gw("endpoint/requests") : Promise.resolve({ requests: [] })]);
   const pre = { name: query.get("name") || "", purpose: query.get("purpose") || "", source: query.get("source") || "", asked: query.get("asked") || "" };
   const fromRepo = /^https:\/\/github\.com\//.test(pre.source);
-  const opt = (value, label, on) => html`<option value="${value}" ${on ? raw("selected") : ""}>${label}</option>`;
   return {
     html: page({
       head: head(viewer.admin ? "도입 관리" : "도입 신청"),
@@ -2056,28 +2081,7 @@ ROUTES.intake = async (_, tab, query = new URLSearchParams()) => {
         { key: "approved", label: "사용 가능한 MCP", body: panel("사용 가능한 MCP", approvedMcpTable(servers, approvedMcpSearch), { flush: true,
           end: html`<a class="panel-shortcut" href="#/intake?t=new"><span>새 신청</span><span aria-hidden="true">↗</span></a>`,
           tools: servers.length ? listToolbar("available-mcp", "이름 또는 기능 검색", approvedMcpSearch) : "" }) },
-        { key: "new", label: "새 신청", body: html`<div class="stack">
-          ${panel("새 신청", html`<form class="stack form" data-form="intake"><div data-intake-status role="status" aria-live="polite"></div>
-          <fieldset><legend>서비스</legend>
-            <label>서비스 이름<input name="display_name" aria-invalid="false" aria-describedby="intake-display_name-error" required minlength="2" maxlength="80" placeholder="GitHub MCP" value="${pre.name}" /><span id="intake-display_name-error" data-field-error="display_name" role="alert"></span></label>
-            <label>사용 목적<textarea name="purpose" aria-invalid="false" aria-describedby="intake-purpose-error" required minlength="10" maxlength="1000">${pre.purpose}</textarea><span id="intake-purpose-error" data-field-error="purpose" role="alert"></span></label>
-          </fieldset>
-          <fieldset><legend>연결</legend><div class="grid c2">
-            <label>유형<select name="intake_kind" aria-invalid="false" aria-describedby="intake-intake_kind-error" data-intake-kind>${opt("remote-endpoint", "원격 MCP", !fromRepo)}${opt("repository", "소스 코드", fromRepo)}</select><span id="intake-intake_kind-error" data-field-error="intake_kind" role="alert"></span></label>
-             <label>연결 방식<select name="requested_transport" aria-invalid="false" aria-describedby="intake-requested_transport-error">${Object.entries(TRANSPORT).map(([value, label]) => opt(value, label, value === (fromRepo ? "stdio" : "streamable-http")))}</select><span id="intake-requested_transport-error" data-field-error="requested_transport" role="alert"></span></label>
-            <label data-intake-field="remote-endpoint" ${fromRepo ? raw("hidden") : ""}>MCP 주소<input name="endpoint_url" aria-invalid="false" aria-describedby="intake-endpoint_url-error" type="url" maxlength="500" placeholder="https://…/mcp" value="${fromRepo ? "" : pre.source}" /><span id="intake-endpoint_url-error" data-field-error="endpoint_url" role="alert"></span></label>
-            ${pre.asked ? html`<input type="hidden" name="endpoint_request_id" value="${pre.asked}" />` : ""}
-            <label data-intake-field="repository" ${fromRepo ? "" : raw("hidden")}>저장소<input name="repository_url" aria-invalid="false" aria-describedby="intake-repository_url-error" type="url" maxlength="300" placeholder="https://github.com/org/repo" value="${fromRepo ? pre.source : ""}" /><span id="intake-repository_url-error" data-field-error="repository_url" role="alert"></span></label>
-          </div></fieldset>
-          <label>데이터 등급<select name="data_class" aria-invalid="false" aria-describedby="intake-data_class-error">${Object.entries(DATA_CLASS).map(([value, label]) => opt(value, label, value === "nonimportant"))}</select><span id="intake-data_class-error" data-field-error="data_class" role="alert"></span></label>
-          <fieldset data-intake-field="remote-endpoint"><legend>필요한 도구</legend>
-            <button class="btn" type="button" data-act="intake-discover">도구 불러오기</button>
-            <div data-requested-tools></div><span id="intake-requested_tool-error" data-field-error="requested_tool" role="alert"></span>
-          </fieldset>
-          <div class="row-actions center"><button class="btn primary" type="submit">신청</button></div></form>`)}
-          <details class="panel"><summary>기존 신청 검색</summary><div class="filters"><input class="grow" type="search" data-catalog-search
-            aria-label="MCP 이름 또는 저장소 검색" placeholder="MCP 이름 또는 저장소" /></div>
-            <div id="catalog-results" aria-live="polite">${catalogResults(catalog || { requests: [], registry: [] })}</div></details></div>` },
+        { key: "new", label: "새 신청", body: intakeNewBody(pre, fromRepo, catalog) },
       ].sort((a, b) => tabOrder.indexOf(a.key) - tabOrder.indexOf(b.key)),
     }),
     after: () => {
@@ -2989,7 +2993,7 @@ const ACTIONS = {
       current.query = q; history.replaceState(history.state, "", routeHash(q));
     }
     charts.mountVisible(scope);
-    if (key === "new" && current.page === "intake") {
+    if (key === "new" && ["intake", "my"].includes(current.page)) {
       scope.querySelector('[data-form="intake"] [name="display_name"]')?.focus();
       const input = scope.querySelector("[data-catalog-search]");
       const query = input.value.trim();
@@ -3834,6 +3838,11 @@ const inboxContext = () => ({ html, raw, chip, kv, when, ago, short, empty, pane
   api, gw, ACTION, DATA_CLASS, INTAKE_STATUS, MANAGED_STATE, ALERT_KIND, decisionChip, policyLabel, impactExplanation, alertTarget, alertDetail,
   alertGroups, alertsSeen, markAlertsSeen, approvalHistory, setApprovalLists, setLedger: (rows) => { policyLedger = rows; }, reload, refreshBadges });
 ROUTES.inbox = (arg, tab, query) => inboxRoute(inboxContext(), query);
+const myContext = () => ({ html, chip, when, short, empty, panel, head, page, api, viewer, INTAKE_STATUS, MANAGED_STATE, DATA_CLASS,
+  consentTabs, consentRows: () => consentRows, approvedMcpTable, approvedMcpSearch: () => approvedMcpSearch, listToolbar, intakeNewBody });
+ROUTES.connections = ROUTES.connections || ((arg, tab, query) => ROUTES.servers(arg, tab || "items", query));
+
+ROUTES.my = (arg, tab, query) => myRoute(myContext(), tab, query);
 Object.assign(ACTIONS, inboxActions(inboxContext()));
 
 document.addEventListener("click", (event) => {
