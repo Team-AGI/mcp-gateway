@@ -537,7 +537,7 @@ async function route() {
     if (at.query.get("d") && /^\d+$/.test(at.query.get("d"))) await showDecision(at.query.get("d"));
     else if (["config", "listener", "os-event"].includes(at.query.get("record_kind")) && /^\d+$/.test(at.query.get("record_id") || ""))
       await ACTIONS["endpoint-record"]({ dataset: { kind: at.query.get("record_kind"), id: at.query.get("record_id") } });
-    else if (["approval", "relationship", "intake-report", "audit-event", "alert-detail", "incident-evidence", "integration", "policy", "connector", "target"].includes(at.query.get("detail_kind")) && at.query.get("detail_id"))
+    else if (["approval", "relationship", "intake-report", "audit-event", "alert-detail", "incident-evidence", "integration", "policy", "organization-policy", "connector", "target"].includes(at.query.get("detail_kind")) && at.query.get("detail_id"))
       await ACTIONS[at.query.get("detail_kind")]({ dataset: { id: at.query.get("detail_id"), key: at.query.get("detail_id") } });
   } catch (error) {
     if (seq === routeSeq) view.innerHTML = String(empty("", { failed: true }));
@@ -851,6 +851,17 @@ function dashboardPending(m) {
   return { items: types, total: types.reduce((sum, x) => sum + x.n, 0), oldest: types.find((x) => x.at)?.at || null };
 }
 
+function kpiCard(label, value, foot, { href = "", tone = "", trend = "", of = null } = {}) {
+  const body = html`<div class="label">${label}</div><div class="value">${value ?? "—"}${of == null ? "" : html`<small class="of">/ ${of}</small>`}</div><div class="foot">${foot}${trend ? raw(trend) : ""}</div>`;
+  return href ? html`<a class="kpi ${tone}" href="${href}">${body}</a>` : html`<div class="kpi ${tone}">${body}</div>`;
+}
+
+function engineChip(deployment) {
+  if (typeof deployment?.rules_match !== "boolean" || typeof deployment?.data_match !== "boolean") return chip("outline", "정책 엔진 확인 불가");
+  const same = deployment.rules_match && deployment.data_match;
+  return html`<span title="${`룰셋 ${deployment.rules_match ? "일치" : "불일치"} · 정책 데이터 ${deployment.data_match ? "일치" : "불일치"}`}">${chip(same ? "allow" : "alert", same ? "정책 엔진 일치" : "정책 엔진 불일치")}</span>`;
+}
+
 function dashboardCards(m) {
   const { o, r } = m, cur = m.cur, prev = m.prev;
   const total = count(cur?.total), before = count(prev?.total);
@@ -865,17 +876,13 @@ function dashboardCards(m) {
   const alertTotal = count(m.alerts?.total), previousAlertTotal = count(m.previousAlerts?.total);
   const logs = dashboardScope(r.since, r.until, m.server);
   const alertRange = new URLSearchParams({ t: "alerts", since: r.since.toISOString(), until: r.until.toISOString() });
-  const card = (label, value, foot, { href = "", tone = "", trend = "", of = null } = {}) => {
-    const body = html`<div class="label">${label}</div><div class="value">${value ?? "—"}${of == null ? "" : html`<small class="of">/ ${of}</small>`}</div><div class="foot">${foot}${trend ? raw(trend) : ""}</div>`;
-    return href ? html`<a class="kpi ${tone}" href="${href}">${body}</a>` : html`<div class="kpi ${tone}">${body}</div>`;
-  };
   return html`<div class="kpis dash-kpis">
-    ${card("호출", total, html`${deltaView(total, before, { bad: "none" })}<span class="base">전기간</span>`, { href: dashboardHref("activity", logs), trend: charts.spark(buckets.map((b) => DECISIONS.reduce((s, d) => s + b[d], 0))) })}
-    ${card("차단 비율", percentText(rate), html`${deltaView(rate, previousRate, { points: true })}<span class="base">전기간</span>`, { href: dashboardHref("activity", dashboardScope(r.since, r.until, m.server, { decision: "Block" })), trend: charts.spark(buckets.map((b) => b.Block)) })}
-    ${card("처리할 일", pending.total, html`<span class="delta">${pending.oldest ? ago(pending.oldest) : "—"}</span><span class="base">최장 대기</span>`, { href: "#/overview?t=approvals", tone: pending.total > 0 ? "alert" : "" })}
-    ${card("경보", alertTotal, html`${deltaView(alertTotal, previousAlertTotal)}<span class="base">전기간</span>`, { href: dashboardHref("security", alertRange), tone: alertTotal > 0 ? "block" : "" })}
-    ${card("미적용", gap.size, html`<span class="delta">미등록 ${stations.size} · 미적용 ${unmanaged.length}</span>`, { href: stations.size ? "#/endpoints?t=shadow" : "#/endpoints?t=devices", tone: gap.size > 0 ? "alert" : "", of: new Set([...agents.map((a) => a.endpoint_id), ...stations]).size })}
-    ${card("점검 필요 서버", attention, "", { href: "#/servers?t=servers&attention=required", tone: attention > 0 ? "alert" : "", of: (o.servers || []).length })}
+    ${kpiCard("호출", total, html`${deltaView(total, before, { bad: "none" })}<span class="base">전기간</span>`, { href: dashboardHref("activity", logs), trend: charts.spark(buckets.map((b) => DECISIONS.reduce((s, d) => s + b[d], 0))) })}
+    ${kpiCard("차단 비율", percentText(rate), html`${deltaView(rate, previousRate, { points: true })}<span class="base">전기간</span>`, { href: dashboardHref("activity", dashboardScope(r.since, r.until, m.server, { decision: "Block" })), trend: charts.spark(buckets.map((b) => b.Block)) })}
+    ${kpiCard("처리할 일", pending.total, html`<span class="delta">${pending.oldest ? ago(pending.oldest) : "—"}</span><span class="base">최장 대기</span>`, { href: "#/overview?t=approvals", tone: pending.total > 0 ? "alert" : "" })}
+    ${kpiCard("경보", alertTotal, html`${deltaView(alertTotal, previousAlertTotal)}<span class="base">전기간</span>`, { href: dashboardHref("security", alertRange), tone: alertTotal > 0 ? "block" : "" })}
+    ${kpiCard("미적용", gap.size, html`<span class="delta">미등록 ${stations.size} · 미적용 ${unmanaged.length}</span>`, { href: stations.size ? "#/endpoints?t=shadow" : "#/endpoints?t=devices", tone: gap.size > 0 ? "alert" : "", of: new Set([...agents.map((a) => a.endpoint_id), ...stations]).size })}
+    ${kpiCard("점검 필요 서버", attention, "", { href: "#/servers?t=servers&attention=required", tone: attention > 0 ? "alert" : "", of: (o.servers || []).length })}
   </div>`;
 }
 
@@ -952,13 +959,10 @@ function dashboardSummary(m) {
 }
 
 function dashboardStatus(m) {
-  const matched = m.ledger?.deployment;
-  const engine = typeof matched?.rules_match === "boolean" && typeof matched?.data_match === "boolean"
-    ? chip(matched.rules_match && matched.data_match ? "allow" : "alert", matched.rules_match && matched.data_match ? "정책 엔진 일치" : "정책 엔진 불일치") : chip("outline", "정책 엔진 확인 불가");
   const d = m.delivery;
   const siem = !d ? chip("alert", "관제 확인 불가") : Number(d.pending) > 0 ? chip(Number(d.retrying) > 0 ? "alert" : "outline", `관제 미전달 ${d.pending}`)
     : d.last_delivered ? chip("allow", `관제 전달 ${ago(d.last_delivered)}`) : chip("outline", "관제 설정 안 됨");
-  return html`${modeChip(m.o.enforcement)}${componentHealth(m.health)}${engine}${siem}`;
+  return html`${modeChip(m.o.enforcement)}${componentHealth(m.health)}${engineChip(m.ledger?.deployment)}${siem}`;
 }
 
 function dashboardBar(m) {
@@ -2846,8 +2850,6 @@ const alertsTab = (alertData, q) => alertData ? html`${kv([["기간", q.get("hou
   : empty("", { failed: true });
 let policyEvidence = {};
 let organizationPolicies = [];
-const organizationRuntime = (p) => (p.runtime_rule_ids || []).length ? `대응 규칙 ${p.runtime_rule_ids.length}개`
-  : p.implementation === "solution" ? "솔루션 기능" : "운영 판정 없음";
 
 const policyExecutor = (p) => ({ opa: "정책 엔진", gateway: "게이트웨이", endpoint: "엔드포인트", vendor: "벤더" }[p.enforced_by] || "—");
 const policyEnvironment = (env) => ({ prod: "운영 환경", stage: "사전 검증 환경", dev: "개발 환경" }[env] || "—");
@@ -2901,39 +2903,170 @@ function endpointCallsTab(toolData) {
         <td class="num">${e.input_bytes == null ? "—" : byteText(e.input_bytes)}</td><td class="num">${e.output_bytes == null ? "—" : byteText(e.output_bytes)}</td></tr>`)}</tbody></table>` : empty("엔드포인트 호출 기록 없음"), { flush: true, sub: toolData ? `전체 ${toolData.total}건` : "" }) };
 }
 
-ROUTES.policy = async (_, tab) => {
-  const [{ enforcement }, ledger] = await Promise.all([gw("enforcement"), gw("policy/ledger")]);
+let policyWindow = { key: "24h", since: new Date(), until: new Date(), activity: null, enforcement: "enforce" };
+const POLICY_RANGES = { "24h": ["24시간", 24], "7d": ["7일", 168], "30d": ["30일", 720] };
+const POLICY_MODE = { auto: "자동 집행", feature: "제품 기능", manual: "수동 점검", structural: "구조적 차단" };
+const POLICY_MODE_TONE = { auto: "brand", feature: "outline", manual: "alert", structural: "plain" };
+const POLICY_STAGES = ["도입", "등록", "실행", "관리", "폐기"];
+const POLICY_STAGE_ORDER = { I: 0, R: 1, E: 2, O: 3, D: 4 };
+const POLICY_STATE = { on: "켜짐", locked: "항상 켜짐", report: "보고 전용", off: "꺼짐" };
+const policyStage = (p) => POLICY_STAGES[POLICY_STAGE_ORDER[p.id.split("-")[1]]] || p.stage;
+const policyRulesOf = (p) => (p.runtime_rule_ids || []).map((id) => policyLedger.find((rule) => rule.policy_id === id)).filter(Boolean);
+const ruleInForce = (rule) => ["운영", "제한"].includes(rule.status);
+
+function policyState(p, enforcement) {
+  if (p.mode !== "auto") return "";
+  const rules = policyRulesOf(p);
+  if (!rules.length) return "";
+  if (!rules.some(ruleInForce)) return "off";
+  const active = rules.filter(ruleInForce);
+  if (active.every((rule) => rule.monitor_behavior === "protected")) return "locked";
+  return enforcement === "monitor" && active.some((rule) => rule.monitor_behavior === "eligible") ? "report" : "on";
+}
+
+function policyCounts(p, byRule) {
+  const sum = Object.fromEntries([...DECISIONS, "total"].map((d) => [d, 0]));
+  for (const rule of p.runtime_rule_ids || []) for (const [key, n] of Object.entries(byRule.get(rule) || {})) sum[key] += n;
+  return sum;
+}
+function policyActivityByRule(activity) {
+  const byRule = new Map();
+  for (const row of activity?.rows || []) {
+    const entry = byRule.get(row.policy_id) || {};
+    entry[row.decision] = (entry[row.decision] || 0) + Number(row.n);
+    entry.total = (entry.total || 0) + Number(row.n);
+    byRule.set(row.policy_id, entry);
+  }
+  return byRule;
+}
+const policyFilters = (query) => ({ stage: POLICY_STAGES.includes(query.get("stage")) ? query.get("stage") : "", mode: POLICY_MODE[query.get("mode")] ? query.get("mode") : "",
+  state: POLICY_STATE[query.get("state")] ? query.get("state") : "", has: query.get("has") === "1", text: (query.get("q") || "").trim().toLowerCase() });
+const policyMatches = (row, f) => (!f.stage || row.stage === f.stage) && (!f.mode || row.mode === f.mode) && (!f.state || row.state === f.state)
+  && (!f.has || Number(row.total) > 0) && (!f.text || row.text.includes(f.text));
+function applyPolicyFilters() {
+  const control = (name) => $(`[data-policy-filter="${name}"]`);
+  const f = { stage: control("stage")?.value || "", mode: control("mode")?.value || "", state: control("state")?.value || "", has: Boolean(control("has")?.checked),
+    text: (control("text")?.value || "").trim().toLowerCase() };
+  const shown = new Map();
+  for (const row of document.querySelectorAll("#organization-policy-list tr[data-policy]")) {
+    const match = policyMatches(row.dataset, f);
+    row.hidden = !match || row.closest("tbody")?.dataset.collapsed === "true";
+    if (match) shown.set(row.dataset.group, (shown.get(row.dataset.group) || 0) + 1);
+  }
+  for (const body of document.querySelectorAll("#organization-policy-list tbody[data-group]")) body.hidden = !shown.has(body.dataset.group);
+  const none = $("[data-list-empty=\"organization-policy-list\"]");
+  if (none) none.hidden = shown.size > 0;
+}
+
+function policyMiniBar(counts, label) {
+  if (!counts.total) return html`<span class="muted">0</span>`;
+  let x = 0;
+  const rects = DECISIONS.filter((d) => counts[d] > 0).map((d) => {
+    const width = counts[d] / counts.total * 100, rect = `<rect class="${d.toLowerCase()}" x="${x.toFixed(2)}" y="0" width="${width.toFixed(2)}" height="8"/>`;
+    x += width;
+    return rect;
+  }).join("");
+  return html`<svg class="minibar" viewBox="0 0 100 8" preserveAspectRatio="none" width="56" height="8" role="img" aria-label="${label}"><title>${label}</title>${raw(rects)}</svg><span class="num">${counts.total}</span>`;
+}
+
+function policyCharts(rows, activity, analysis, range) {
+  const series = analysisSeries(analysis);
+  const tone = (name) => charts.tone(name);
+  const modes = Object.keys(POLICY_MODE);
+  const byRule = policyActivityByRule(activity);
+  const top = [...byRule.entries()].filter(([id]) => id).map(([id, c]) => ({ id, value: (c.Block || 0) + (c.Alert || 0) + (c.Approval || 0) + (c.Restrict || 0), blocked: c.Block || 0, alerted: c.Alert || 0 }))
+    .filter((x) => x.value > 0).sort((a, b) => b.value - a.value).slice(0, 8);
+  const go = (href) => { location.hash = href; };
+  const logs = (extra) => new URLSearchParams({ event_kind: "tools/call", since: range.since.toISOString(), until: range.until.toISOString(), ...extra });
+  const modeColor = { auto: tone("--brand"), feature: tone("--muted-series"), structural: tone("--ink-3"), manual: tone("--alert") };
+  return {
+    "c-policy-stage": () => charts.stacked(POLICY_STAGES, modes.map((mode) => ({ name: POLICY_MODE[mode], color: modeColor[mode],
+      data: POLICY_STAGES.map((stage) => rows.filter((p) => policyStage(p) === stage && p.mode === mode).length) })),
+    { onClick: (e) => { const mode = modes.find((m) => POLICY_MODE[m] === e.seriesName || t(POLICY_MODE[m]) === e.seriesName); go(`#/policy?${new URLSearchParams({ stage: POLICY_STAGES[e.dataIndex], ...(mode ? { mode } : {}) })}`); } }),
+    "c-policy-top": () => charts.bars(top.map((x) => ({ name: policyLabel(x.id), value: x.value, color: charts.color(x.blocked >= x.alerted ? "Block" : "Alert") })),
+      { onClick: (e) => { const row = top[e.dataIndex]; if (row) go(`#/activity?${logs({ policy: row.id })}`); } }),
+    "c-policy-trend": () => charts.lines(series.map((b) => b.label), [
+      { name: DECISION.Block[1], data: series.map((b) => b.Block), color: charts.color("Block") },
+      { name: DECISION.Alert[1], data: series.map((b) => b.Alert), color: charts.color("Alert") },
+      { name: "승인 요청·제한", data: series.map((b) => b.Approval + b.Restrict), color: charts.color("Approval") }],
+    { onClick: (e) => { const b = series[e.dataIndex]; if (b) go(`#/activity?${logs({ since: new Date(b.at).toISOString(), until: new Date(b.at + bucketLength(analysis)).toISOString() })}`); } }),
+  };
+}
+
+ROUTES.policy = async (_, tab, query = new URLSearchParams()) => {
+  const key = POLICY_RANGES[query.get("range")] ? query.get("range") : "24h";
+  const hours = POLICY_RANGES[key][1], until = new Date(), since = new Date(until.getTime() - hours * 3600000);
+  const soft = (promise) => promise.catch(() => null);
+  const [{ enforcement }, ledger, activity, analysis] = await Promise.all([gw("enforcement"), gw("policy/ledger"), soft(gw(`policy/activity?hours=${hours}`)),
+    soft(gw(`activity/analysis?${new URLSearchParams({ event_kind: "tools/call", since: since.toISOString(), until: until.toISOString() })}`))]);
   policyLedger = ledger.policies;
   policyEvidence = ledger;
   organizationPolicies = ledger.organization?.policies || [];
+  policyWindow = { key, hours, since, until, activity, enforcement };
+  const range = policyWindow;
+  const f = policyFilters(query);
+  const byRule = policyActivityByRule(activity);
+  const label = POLICY_RANGES[key][0];
+  const rows = organizationPolicies.map((p) => ({ p, counts: policyCounts(p, byRule), state: policyState(p, enforcement) }));
+  const modeCount = (mode) => organizationPolicies.filter((p) => p.mode === mode).length;
+  const sum = (list) => list.reduce((total, row) => total + (Number(row.n) || 0) * (["Block", "Alert", "Approval"].includes(row.decision) ? 1 : 0), 0);
+  const recent = activity ? sum(activity.rows) : null, before = activity ? sum(activity.previous) : null;
+  const total = organizationPolicies.length;
+  const sorted = [...rows].sort((a, b) => (b.p.mode === "manual") - (a.p.mode === "manual") || (b.counts.total - b.counts.Allow) - (a.counts.total - a.counts.Allow) || a.p.id.localeCompare(b.p.id));
+  const groups = new Map();
+  for (const row of [...sorted].sort((a, b) => a.p.group.localeCompare(b.p.group))) {
+    if (!groups.has(row.p.group)) groups.set(row.p.group, []);
+    groups.get(row.p.group).push(row);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) => POLICY_STAGE_ORDER[a[0]] - POLICY_STAGE_ORDER[b[0]] || a.localeCompare(b));
+  const rowData = (row) => ({ stage: policyStage(row.p), mode: row.p.mode, state: row.state, total: row.counts.total, text: `${row.p.id} ${row.p.title}`.toLowerCase() });
+  const filterOption = (name, items, current) => html`<select data-policy-filter="${name}" aria-label="${name === "stage" ? "단계" : name === "mode" ? "집행 방식" : "상태"}"><option value="">${name === "stage" ? "모든 단계" : name === "mode" ? "모든 집행 방식" : "모든 상태"}</option>
+    ${Object.entries(items).map(([value, text]) => html`<option value="${value}" ${value === current ? raw("selected") : ""}>${text}</option>`)}</select>`;
+  const table = ordered.map(([group, items]) => {
+    const manual = items.filter((row) => row.p.mode === "manual").length;
+    return html`<tbody data-group="${group}" ${items.some((row) => policyMatches(rowData(row), f)) ? "" : raw("hidden")}>
+      <tr class="group-row"><th colspan="7" scope="colgroup"><button class="group-toggle" type="button" data-act="policy-group" aria-expanded="true"><span class="group-name"><b>${items[0].p.stage}</b> ${items[0].p.group_title}</span>
+        <span class="muted" title="${`${items.length} · 수동 점검 ${manual}`}">${items.length}${manual ? html` · <span class="bad-text">${manual}</span>` : ""}</span></button></th></tr>
+      ${items.map((row) => { const d = rowData(row), p = row.p, rules = policyRulesOf(p);
+        return html`<tr class="clickable" tabindex="0" data-act="organization-policy" data-id="${p.id}" data-policy data-group="${group}" data-stage="${d.stage}" data-mode="${d.mode}" data-state="${d.state}" data-total="${d.total}" data-text="${d.text}" ${policyMatches(d, f) ? "" : raw("hidden")}>
+          <td class="mono">${p.id}</td><td>${p.title}</td><td>${p.priority}</td><td>${chip(POLICY_MODE_TONE[p.mode], POLICY_MODE[p.mode])}</td>
+          <td>${row.state ? chip(row.state === "off" ? "outline" : row.state === "report" ? "alert" : "allow", POLICY_STATE[row.state]) : NONE}</td>
+          <td class="activity-cell">${(p.runtime_rule_ids || []).length ? policyMiniBar(row.counts, DECISIONS.filter((x) => row.counts[x] > 0).map((x) => `${DECISION[x][1]} ${row.counts[x]}`).join(" · ")) : NONE}</td>
+          <td>${rules.length ? html`${rules.slice(0, 2).map((rule) => chip("outline", rule.name))}${rules.length > 2 ? html`<span class="muted">외 ${rules.length - 2}</span>` : ""}` : NONE}</td></tr>`; })}</tbody>`;
+  });
+  const controls = html`<div class="policy-filters">
+    ${filterOption("stage", Object.fromEntries(POLICY_STAGES.map((s) => [s, s])), f.stage)}${filterOption("mode", POLICY_MODE, f.mode)}${filterOption("state", POLICY_STATE, f.state)}
+    <label class="check"><input type="checkbox" data-policy-filter="has" ${f.has ? raw("checked") : ""} /> 판정이 있는 정책만</label>
+    <input type="search" data-policy-filter="text" placeholder="번호·제목 검색" aria-label="번호·제목 검색" maxlength="120" value="${query.get("q") || ""}" /></div>`;
+  const cards = html`<div class="kpis policy-kpis">
+    ${kpiCard("자동 집행 정책", modeCount("auto"), "", { href: "#/policy?mode=auto", of: total })}
+    ${kpiCard("제품 기능으로 충족", modeCount("feature"), "", { href: "#/policy?mode=feature", of: total })}
+    ${kpiCard("수동 점검 필요", modeCount("manual"), "", { href: "#/policy?mode=manual", tone: modeCount("manual") > 0 ? "alert" : "", of: total })}
+    ${kpiCard("차단·경보·승인 요청", recent, html`${deltaView(recent, before)}<span class="base">전기간</span>`, { href: `#/activity?${new URLSearchParams({ event_kind: "tools/call", since: since.toISOString(), until: until.toISOString() })}` })}
+  </div>`;
+  const box = (cls, title, id, labelText, sub = "") => html`<div class="${cls}">${panel(title, chartBox(id, labelText, "d220"), { sub })}</div>`;
+  const policyTab = html`${cards}
+    <div class="dash-grid">${box("c4", "단계별 집행 방식", "c-policy-stage", "단계별 집행 방식 정책 수")}${box("c4", "상위 판정 정책", "c-policy-top", "차단·경보 상위 정책")}${box("c4", "판정 추이", "c-policy-trend", "판정 건수 추이")}</div>
+    ${panel("정책", total ? html`<table class="data policy-table" id="organization-policy-list"><thead><tr><th>번호</th><th>제목</th><th>우선순위</th><th>집행 방식</th><th>상태</th>
+      <th title="연결된 운영 규칙이 낸 판정 건수입니다. 규칙을 함께 쓰는 정책은 같은 호출을 중복해서 셉니다.">최근 ${label}</th><th>연결 규칙</th></tr></thead>${table}</table>
+      <p class="empty" role="status" data-list-empty="organization-policy-list" hidden>조건에 맞는 결과 없음</p>`
+      : empty(ledger.organization?.source_state === "available" ? "등록된 조직 정책 없음" : "조직 정책 원본 조회 실패"), { flush: true, tools: controls })}`;
   return {
     html: page({
-      head: head("보안 관리 정책", { status: modeChip(enforcement), actions: html`<button class="btn ${enforcement === "enforce" ? "danger" : "primary"}" data-act="enforcement"
-        data-mode="${enforcement === "enforce" ? "monitor" : "enforce"}">${enforcement === "enforce" ? "관찰 모드로 전환" : "집행 모드로 전환"}</button>` }),
-      active: tab === "organization" ? "organization" : "ledger",
-      tabs: [{ key: "organization", label: "전체 보안 정책", n: organizationPolicies.length, body:
-        panel("전체 보안 정책", html`<table class="data"><thead><tr><th>번호</th><th>정책 대상</th><th>적용 단계</th><th>운영 판정</th></tr></thead><tbody id="organization-policy-list">
-          ${organizationPolicies.map((p) => html`<tr class="clickable" tabindex="0" data-act="organization-policy" data-id="${p.id}">
-            <td class="mono">${p.id}</td><td>${p.name}</td><td>${p.stage}</td>
-            <td>${organizationRuntime(p)}</td></tr>`)}
-          </tbody></table><p class="empty" role="status" data-list-empty="organization-policy-list" hidden>조건에 맞는 결과 없음</p>
-          ${organizationPolicies.length ? "" : empty(ledger.organization?.source_state === "available" ? "등록된 조직 정책 없음" : "조직 정책 원본 조회 실패")}`,
-          { flush: true, tools: listToolbar("organization-policy-list", "정책 번호·대상·단계 검색") }) },
-        { key: "ledger", label: "보안 통제 규칙", n: policyLedger.length, body: html`<div class="stack">
-        ${panel(html`<span class="policy-load-title"><span>정책 로드 상태</span><span class="sub">${ledger.record_window_hours === 24 ? "최근 24시간" : "—"}</span></span>`, html`<div class="policy-load-details">${kv([
-          [html`<span title="MINT 게이트웨이의 배포 대상 Rego 규칙 코드와 OPA에 실제로 로드된 대응 규칙 코드가 일치하는지 해시로 비교합니다.">룰셋 일치 여부</span>`, policyDeployLabel(ledger, "rules_match")],
-          [html`<span title="MINT 게이트웨이에 배포된 정책 데이터와 OPA에 실제로 로드된 대응 정책 데이터가 일치하는지 해시로 비교합니다.">정책 데이터 일치 여부</span>`, policyDeployLabel(ledger, "data_match")],
-          ["조회 기준 시각", when(ledger.checked_at)]])}</div>`, {
-          status: chip(ledger.source_state === "loaded" ? "allow" : ledger.source_state === "unavailable" ? "block" : "outline", policySourceLabel(ledger)),
-        })}
-        ${panel("보안 통제 규칙", html`<table class="data"><thead><tr><th>정책</th><th>집행 주체</th><th>등록 상태</th><th>정의된 결과</th><th>최근 24시간 판정</th><th>관련 보안 정책</th></tr></thead><tbody>
+      head: head("보안 관리 정책", { status: html`${modeChip(enforcement)}${engineChip(ledger.deployment)}<span class="muted">${when(ledger.checked_at)}</span>`,
+        actions: html`<div class="seg" role="group" aria-label="기간">${Object.entries(POLICY_RANGES).map(([k, [text]]) => html`<button class="seg-btn" type="button" data-act="policy-range" data-range="${k}" aria-pressed="${String(k === key)}">${text}</button>`)}</div>
+          <button class="btn ${enforcement === "enforce" ? "danger" : "primary"}" data-act="enforcement" data-mode="${enforcement === "enforce" ? "monitor" : "enforce"}">${enforcement === "enforce" ? "관찰 모드로 전환" : "집행 모드로 전환"}</button>` }),
+      active: tab === "ledger" ? "ledger" : "organization",
+      tabs: [{ key: "organization", label: "정책", n: total, body: policyTab },
+        { key: "ledger", label: "운영 규칙", n: policyLedger.length, body: panel("운영 규칙", html`<table class="data"><thead><tr><th>규칙</th><th>집행 주체</th><th>등록 상태</th><th>정의된 결과</th><th>최근 24시간 판정</th><th>관련 보안 정책</th></tr></thead><tbody>
           ${policyLedger.map((p) => html`<tr class="clickable" tabindex="0" data-act="policy" data-id="${p.policy_id}">
             <td><b>${p.name}</b><span class="sub mono">${p.policy_id}</span></td><td>${policyExecutor(p)}</td><td>${["운영", "중지", "폐기"].includes(p.status) ? p.status : "—"}</td>
             <td>${UNSUPPORTED_POLICY.has(p.policy_id) ? chip("outline", "지원 안 함") : outcomeDecision(p.outcome) ? decisionChip(outcomeDecision(p.outcome)) : "—"}</td>
             <td>${chip(policyRecorded(p) ? "plain" : "outline", policyRecordLabel(p))}</td><td>${policyLinks(p).join(", ") || "매핑 미확인"}</td></tr>`)}
-          </tbody></table>${policyLedger.length ? "" : empty(ledger.source_state === "loaded" ? "등록된 정책 없음" : "정책 원본 조회 실패")}`, { flush: true })}
-        </div>` }],
+          </tbody></table>${policyLedger.length ? "" : empty(ledger.source_state === "loaded" ? "등록된 정책 없음" : "정책 원본 조회 실패")}`, { flush: true }) }],
     }),
+    charts: policyCharts(organizationPolicies, activity, analysis, range, policyLedger),
+    after: () => { if (query.get("mode") || query.get("stage")) $("#organization-policy-list")?.scrollIntoView?.({ block: "nearest" }); },
   };
 };
 
@@ -3699,12 +3832,21 @@ const ACTIONS = {
   "organization-policy"(el) {
     const p = organizationPolicies.find((row) => row.id === el.dataset.id);
     if (!p) return;
-    const candidates = (p.runtime_rule_ids || []).filter((id) => policyLedger.some((rule) => rule.policy_id === id));
-    openDrawer(p.id, html`<b>${p.name}</b>`, [
-      { key: "definition", label: "정책 정의", body: kv([["정책 번호", p.id], ["적용 단계", p.stage], ["정책 대상", p.name],
+    rememberDetail(p.id, "organization-policy");
+    const rules = policyRulesOf(p);
+    const counts = policyCounts(p, policyActivityByRule(policyWindow.activity));
+    const state = policyState(p, policyWindow.enforcement);
+    const logs = (rule) => `#/activity?${new URLSearchParams({ event_kind: "tools/call", policy: rule.policy_id, since: policyWindow.since.toISOString(), until: policyWindow.until.toISOString() })}`;
+    openDrawer(p.id, html`<b>${p.title}</b><div class="row-actions">${chip(POLICY_MODE_TONE[p.mode], POLICY_MODE[p.mode])}${state ? chip(state === "off" ? "outline" : state === "report" ? "alert" : "allow", POLICY_STATE[state]) : ""}</div>`, [
+      { key: "status", label: "운영 현황", body: html`${kv([["기간", POLICY_RANGES[policyWindow.key][0]], ["판정", counts.total],
+        ...DECISIONS.filter((d) => counts[d] > 0).map((d) => [DECISION[d][1], counts[d]])])}
+        ${rules.length ? html`<div class="row-actions">${rules.map((rule) => html`<a class="btn sm" href="${logs(rule)}">${rule.name} <span aria-hidden="true">↗</span></a>`)}</div>` : empty("연결된 운영 규칙 없음")}` },
+      { key: "rules", label: "규칙과 기능", body: html`${rules.length ? html`<div class="row-actions">${rules.map((rule) => html`<button class="btn" type="button" data-act="policy" data-id="${rule.policy_id}">${rule.name}</button>`)}</div>` : empty("운영 대응 규칙 없음")}
+        ${p.mode === "structural" ? html`<p class="note">게이트웨이가 중개하지 않음</p>` : ""}` },
+      { key: "definition", label: "정책 정의", body: kv([["정책 번호", p.id], ["적용 단계", p.stage], ["정책 대상", p.name], ["우선순위", p.priority],
         ["정책 내용", p.content], ["적용 조건", p.condition], ["통과 요건", p.pass_condition], ["차단 요건", p.block_condition],
         ["필요 증빙", p.required_evidence]]) },
-      { key: "rules", label: "운영 대응 규칙", body: html`${candidates.length ? html`<div class="row-actions">${candidates.map((id) => html`<button class="btn" type="button" data-act="policy" data-id="${id}">${policyLedger.find((rule) => rule.policy_id === id).name}</button>`)}</div>` : empty("운영 대응 규칙 없음")}` },
+      ...(p.mode === "manual" ? [{ key: "manual", label: "수동 점검", body: kv([["점검 항목", p.pass_condition || p.content], ["필요 증빙", p.required_evidence]]) }] : []),
     ]);
   },
   policy(el) {
@@ -3746,6 +3888,17 @@ const ACTIONS = {
     } else dashboardGo({ range: key === "24h" ? "" : key, since: "", until: "" });
   },
   "dash-refresh": () => route(),
+  "policy-range"(el) {
+    const q = new URLSearchParams(current.query);
+    q.set("range", el.dataset.range);
+    location.hash = `#/policy?${q}`;
+  },
+  "policy-group"(el) {
+    const body = el.closest("tbody"), closed = body.dataset.collapsed !== "true";
+    body.dataset.collapsed = String(closed);
+    el.setAttribute("aria-expanded", String(!closed));
+    applyPolicyFilters();
+  },
   "open-case": (el) => { location.hash = `#/termination/${el.dataset.id}`; },
   async "open-termination"(el) {
     const grade = el.dataset.grade;
@@ -4000,6 +4153,7 @@ document.addEventListener("change", (event) => {
     resetIntakeTools(event.target.form);
     return;
   }
+  if (event.target.closest("[data-policy-filter]")) { applyPolicyFilters(); return; }
   const dash = event.target.closest("[data-dash]");
   if (dash) {
     const value = dash.type === "datetime-local" ? (dash.value ? new Date(dash.value).toISOString() : "") : dash.value;

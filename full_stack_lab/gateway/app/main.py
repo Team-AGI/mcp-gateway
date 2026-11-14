@@ -782,6 +782,22 @@ async def policy_ledger_view(user: dict = Depends(admin_caller)) -> dict:
     }
 
 
+@app.get("/api/policy/activity")
+async def policy_activity(hours: int = Query(24, ge=1, le=720), user: dict = Depends(admin_caller)) -> dict:
+    """Final-decision counts per policy rule over a window, and the equal window before it."""
+    until = datetime.now(UTC)
+    since = until - timedelta(hours=hours)
+    rows = await db.fetch_all(f"""SELECT d.policy_id, d.decision, count(*) AS n FROM decisions d
+                                  WHERE d.created_at >= %s AND d.created_at <= %s AND {decommission.REAL_CALL}
+                                  GROUP BY d.policy_id, d.decision""", (since, until))
+    previous = await db.fetch_all(f"""SELECT d.decision, count(*) AS n FROM decisions d
+                                      WHERE d.created_at >= %s AND d.created_at < %s AND {decommission.REAL_CALL}
+                                      GROUP BY d.decision""", (since - timedelta(hours=hours), since))
+    return {"window_hours": hours, "since": since.isoformat(), "until": until.isoformat(),
+            "rows": [{"policy_id": row["policy_id"], "decision": row["decision"], "n": int(row["n"])} for row in rows],
+            "previous": [{"decision": row["decision"], "n": int(row["n"])} for row in previous]}
+
+
 async def policy_deployment_evidence() -> dict | None:
     try:
         info = await policy_info(core.OPA_URL)

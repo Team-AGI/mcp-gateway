@@ -40,6 +40,16 @@ class CatalogTests(unittest.TestCase):
             self.assertLessEqual(set(policy["runtime_rule_ids"]), ledger)
             self.assertEqual(policy["rule_runtime"], loaded and policy["has_rule"])
 
+    def test_console_titles_groups_and_modes_cover_every_policy(self):
+        actual = json.loads((ROOT / "full_stack_lab/gateway/app/organization_policies.json").read_text(encoding="utf-8"))
+        self.assertEqual(actual["summary"]["mode"], {"auto": 39, "feature": 23, "manual": 22, "structural": 6})
+        self.assertEqual(len({p["group"] for p in actual["policies"]}), 26)
+        for policy in actual["policies"]:
+            self.assertTrue(policy["title"].strip())
+            self.assertTrue(policy["group_title"].strip())
+            self.assertIn(policy["priority"], {"P1", "P2", "P3"})
+            self.assertTrue(policy["id"].startswith(f"POL-{policy['group'][0]}-"))
+
     def test_rule_presence_agrees_with_existing_policy_trace(self):
         generator = load("catalog_generator_trace", ROOT / "policy/tools/build_console_catalog.py")
         trace = load("catalog_existing_trace", ROOT / "policy/tools/trace.py")

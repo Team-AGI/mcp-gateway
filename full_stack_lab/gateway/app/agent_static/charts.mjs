@@ -5,6 +5,7 @@ const TOKENS = { Allow: "--allow", Alert: "--alert", Restrict: "--restrict", App
 export const DECISION_LABEL = { Allow: "허용", Alert: "경보", Restrict: "제한", Approval: "승인 대기", Block: "차단" };
 
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+export const tone = (name) => css(name);
 export const color = (decision) => css(TOKENS[decision] || "--muted-series");
 const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 

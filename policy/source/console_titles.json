@@ -1,0 +1,482 @@
+{
+  "groups": {
+    "D-A": "승인 해제·회수·잔존 제거",
+    "D-B": "제공자 자료 삭제 증빙",
+    "D-C": "폐기 전후 감사 기록 보존",
+    "D-D": "폐기 서버 재활성 차단",
+    "E-A": "호출 권한 판정",
+    "E-B": "입력 검증·민감정보·주입 방어",
+    "E-C": "외부 전송·내부 주소 통제",
+    "E-D": "게이트웨이 우회·경로 통제",
+    "E-E": "고위험 건별 확인",
+    "E-F": "호출량·이상 행위 제한",
+    "E-G": "감사 기록·로그 보호",
+    "E-H": "작업 분리",
+    "I-A": "공급자·소스 출처 확인",
+    "I-B": "자료 분류·권한 범위 심사",
+    "I-C": "도구 설명·계약 검사",
+    "I-D": "로컬 실행·외부 제공자 조건",
+    "O-A": "변경 감지·재승인",
+    "O-B": "패키지·취약점 관리",
+    "O-C": "변경 자료·지시문(게이트웨이 비중개)",
+    "O-D": "탐지·경보 시험과 즉시 중지",
+    "R-A": "승인 목록·승인 기록·유효 기한",
+    "R-B": "토큰·인증 분리",
+    "R-C": "접속 목적지·이름 조회 확인",
+    "R-D": "통신 암호화·비밀 보관·요청 출처",
+    "R-E": "로컬 실행 무결성",
+    "R-F": "사용자 동의"
+  },
+  "policies": {
+    "POL-D-01": {
+      "title": "연결 승인 즉시 해제와 권한 회수 확인 기록",
+      "group": "D-A",
+      "mode": "auto"
+    },
+    "POL-D-02": {
+      "title": "Agent 설정에서 폐기 서버 접속 정보 제거",
+      "group": "D-A",
+      "mode": "feature"
+    },
+    "POL-D-03": {
+      "title": "토큰·API 키 회수·무효화",
+      "group": "D-A",
+      "mode": "feature"
+    },
+    "POL-D-04": {
+      "title": "서버 종료와 자동 시작 제거",
+      "group": "D-A",
+      "mode": "feature"
+    },
+    "POL-D-05": {
+      "title": "서버 전용 계정·문서 공유 권한 회수",
+      "group": "D-A",
+      "mode": "feature"
+    },
+    "POL-D-06": {
+      "title": "전용 방화벽 규칙·프록시 경로 제거",
+      "group": "D-A",
+      "mode": "feature"
+    },
+    "POL-D-07": {
+      "title": "제공자 전달 자료의 삭제·반환 증빙",
+      "group": "D-B",
+      "mode": "manual"
+    },
+    "POL-D-08": {
+      "title": "폐기 전후 감사 기록 보존",
+      "group": "D-C",
+      "mode": "feature"
+    },
+    "POL-D-09": {
+      "title": "복원된 서버의 폐기 연결 재활성 차단",
+      "group": "D-D",
+      "mode": "manual"
+    },
+    "POL-E-01": {
+      "title": "위임 범위(사용자·Agent·서버·Tool·기간) 안에서만 실행",
+      "group": "E-A",
+      "mode": "auto"
+    },
+    "POL-E-02": {
+      "title": "이전 허용 결과 재사용 없이 호출마다 권한 재판단",
+      "group": "E-A",
+      "mode": "auto"
+    },
+    "POL-E-03": {
+      "title": "호출마다 사용자·서버·Tool·대상 문서 범위 확인",
+      "group": "E-A",
+      "mode": "auto"
+    },
+    "POL-E-04": {
+      "title": "외부 문서·Tool 결과 속 지시를 명령으로 처리하지 않음",
+      "group": "E-B",
+      "mode": "auto"
+    },
+    "POL-E-05": {
+      "title": "입력의 인증정보·개인정보 제거 또는 가림",
+      "group": "E-B",
+      "mode": "auto"
+    },
+    "POL-E-06": {
+      "title": "MCP 요청을 승인된 Gateway로만 경유",
+      "group": "E-D",
+      "mode": "feature"
+    },
+    "POL-E-07": {
+      "title": "최종 전송 주소를 승인 목적지와 비교",
+      "group": "E-C",
+      "mode": "auto"
+    },
+    "POL-E-08": {
+      "title": "전송 자료 종류·수신자·목적이 승인 범위인지 확인",
+      "group": "E-C",
+      "mode": "auto"
+    },
+    "POL-E-09": {
+      "title": "승인 폴더 밖 파일 접근 거부",
+      "group": "E-D",
+      "mode": "auto"
+    },
+    "POL-E-10": {
+      "title": "서버가 문서 조회 권한을 확인(Gateway 비중개)",
+      "group": "E-A",
+      "mode": "structural"
+    },
+    "POL-E-11": {
+      "title": "서버 간 자료·인증정보 전달은 별도 승인",
+      "group": "E-C",
+      "mode": "auto"
+    },
+    "POL-E-12": {
+      "title": "사용자·업무별 작업 내용 분리",
+      "group": "E-H",
+      "mode": "structural"
+    },
+    "POL-E-13": {
+      "title": "외부 입력을 명령에 붙이지 않고 승인된 동작만 실행",
+      "group": "E-B",
+      "mode": "auto"
+    },
+    "POL-E-14": {
+      "title": "내부 주소 이동 시 최종 접속지가 허용 시스템인지 확인",
+      "group": "E-C",
+      "mode": "auto"
+    },
+    "POL-E-15": {
+      "title": "입력 항목·형식·범위 검증, 정의 밖 값 거부",
+      "group": "E-B",
+      "mode": "auto"
+    },
+    "POL-E-16": {
+      "title": "요청당 반환 문서 수·자료 크기 상한",
+      "group": "E-F",
+      "mode": "auto"
+    },
+    "POL-E-17": {
+      "title": "반복 조회·대량 추출 탐지와 중단",
+      "group": "E-F",
+      "mode": "auto"
+    },
+    "POL-E-18": {
+      "title": "서버 계정과 별개로 요청 사용자의 문서 권한 확인",
+      "group": "E-A",
+      "mode": "auto"
+    },
+    "POL-E-19": {
+      "title": "서버 계정에 필요한 권한만 부여",
+      "group": "E-A",
+      "mode": "manual"
+    },
+    "POL-E-20": {
+      "title": "삭제·공유·외부 전송 실행 전 명시적 사용자 확인",
+      "group": "E-E",
+      "mode": "auto"
+    },
+    "POL-E-21": {
+      "title": "확인한 내용과 실제 호출 값 일치, 확인은 1회만 사용",
+      "group": "E-E",
+      "mode": "auto"
+    },
+    "POL-E-22": {
+      "title": "같은 요청의 중복 실행 방지",
+      "group": "E-F",
+      "mode": "feature"
+    },
+    "POL-E-23": {
+      "title": "호출 횟수·동시 실행 수 상한",
+      "group": "E-F",
+      "mode": "auto"
+    },
+    "POL-E-24": {
+      "title": "대기·실행 시간 상한",
+      "group": "E-F",
+      "mode": "feature"
+    },
+    "POL-E-25": {
+      "title": "모든 호출 감사 기록, 기록 불가 시 차단",
+      "group": "E-G",
+      "mode": "manual"
+    },
+    "POL-E-26": {
+      "title": "감사 기록 변조 방지와 변경 여부 검증",
+      "group": "E-G",
+      "mode": "feature"
+    },
+    "POL-E-27": {
+      "title": "거부·실패·예외 호출도 판단 결과와 사유 기록",
+      "group": "E-G",
+      "mode": "feature"
+    },
+    "POL-E-28": {
+      "title": "로그에 토큰·본문·불필요한 개인정보 제외",
+      "group": "E-G",
+      "mode": "feature"
+    },
+    "POL-E-29": {
+      "title": "오류·진단 정보에 인증정보·내부 자료 노출 방지",
+      "group": "E-G",
+      "mode": "feature"
+    },
+    "POL-I-01": {
+      "title": "공급자·배포 주소를 승인 목록과 대조",
+      "group": "I-A",
+      "mode": "auto"
+    },
+    "POL-I-02": {
+      "title": "자료 분류와 업무 범위별 기능 허용",
+      "group": "I-B",
+      "mode": "auto"
+    },
+    "POL-I-03": {
+      "title": "Tool별 허용 자료·작업 권한표",
+      "group": "I-B",
+      "mode": "auto"
+    },
+    "POL-I-04": {
+      "title": "도구 설명의 지시·불필요 정보 요구 검사",
+      "group": "I-C",
+      "mode": "auto"
+    },
+    "POL-I-05": {
+      "title": "도구 반환 결과 형식·자료 범위 사전 정의",
+      "group": "I-C",
+      "mode": "manual"
+    },
+    "POL-I-06": {
+      "title": "도입 전 시험 실행으로 기능·행위 일치 확인",
+      "group": "I-C",
+      "mode": "manual"
+    },
+    "POL-I-07": {
+      "title": "서버 제공 지시문(프롬프트) 검사",
+      "group": "I-C",
+      "mode": "structural"
+    },
+    "POL-I-08": {
+      "title": "로컬 MCP 파일·실행 권한 제한·격리 실행",
+      "group": "I-D",
+      "mode": "auto"
+    },
+    "POL-I-09": {
+      "title": "외부 제공자의 자료 보관·재사용·삭제 조건 확인",
+      "group": "I-D",
+      "mode": "auto"
+    },
+    "POL-I-10": {
+      "title": "삭제·공유·외부 전송 도구를 사용자 확인 대상에 포함",
+      "group": "I-B",
+      "mode": "auto"
+    },
+    "POL-I-11": {
+      "title": "도입 요구사항(기능·자료·권한·승인 기준) 기록",
+      "group": "I-B",
+      "mode": "manual"
+    },
+    "POL-O-01": {
+      "title": "승인 당시 Tool 명세와 실제 값 비교, 변경 시 재검토",
+      "group": "O-A",
+      "mode": "auto"
+    },
+    "POL-O-02": {
+      "title": "사용자·권한 범위별 Tool 목록 분리",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-03": {
+      "title": "변경된 자료의 사용자별 접근 권한 재확인",
+      "group": "O-C",
+      "mode": "structural"
+    },
+    "POL-O-04": {
+      "title": "변경된 자료의 내용·출처 확인",
+      "group": "O-C",
+      "mode": "structural"
+    },
+    "POL-O-05": {
+      "title": "변경된 지시문 재심사",
+      "group": "O-C",
+      "mode": "structural"
+    },
+    "POL-O-06": {
+      "title": "패키지 제공처·버전 기록, 미승인 패키지 사용 금지",
+      "group": "O-B",
+      "mode": "auto"
+    },
+    "POL-O-07": {
+      "title": "알려진 취약점 정기 확인과 기록",
+      "group": "O-B",
+      "mode": "manual"
+    },
+    "POL-O-08": {
+      "title": "취약점 수정 기한(48시간·14일·30일·90일)",
+      "group": "O-B",
+      "mode": "manual"
+    },
+    "POL-O-09": {
+      "title": "서버 Tool 정의·버전·보안 설정을 승인 기준과 비교",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-10": {
+      "title": "되돌릴 버전의 보안 문제 확인 후 승인·복원",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-11": {
+      "title": "새 주소 재확인, 승인 전 연결 금지",
+      "group": "O-A",
+      "mode": "auto"
+    },
+    "POL-O-12": {
+      "title": "새 전송 목적지 재승인",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-13": {
+      "title": "업데이트로 늘어난 권한 확인",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-14": {
+      "title": "서버 실행 권한·인증 범위 필요성 재확인",
+      "group": "O-A",
+      "mode": "manual"
+    },
+    "POL-O-15": {
+      "title": "확대된 인증·접근 범위 탐지와 재승인",
+      "group": "O-A",
+      "mode": "auto"
+    },
+    "POL-O-16": {
+      "title": "호출 기록 수집 누락 시험",
+      "group": "O-D",
+      "mode": "feature"
+    },
+    "POL-O-17": {
+      "title": "새 Tool 사용·호출 급증 경보 작동 시험",
+      "group": "O-D",
+      "mode": "feature"
+    },
+    "POL-O-18": {
+      "title": "위험 내용·조치 절차를 담당자에게 전달",
+      "group": "O-D",
+      "mode": "feature"
+    },
+    "POL-O-19": {
+      "title": "서버·Tool 즉시 사용 중지",
+      "group": "O-D",
+      "mode": "auto"
+    },
+    "POL-R-01": {
+      "title": "승인 목록에 있는 서버만 연결",
+      "group": "R-A",
+      "mode": "auto"
+    },
+    "POL-R-02": {
+      "title": "예외 승인 만료 시 서버 연결·실행 자동 차단",
+      "group": "R-A",
+      "mode": "auto"
+    },
+    "POL-R-03": {
+      "title": "연결 승인 기록(대상·목적·범위·정책 버전)",
+      "group": "R-A",
+      "mode": "manual"
+    },
+    "POL-R-04": {
+      "title": "서버 이름과 Tool 이름을 함께 사용해 식별",
+      "group": "R-A",
+      "mode": "auto"
+    },
+    "POL-R-05": {
+      "title": "해당 서버용으로 발급된 토큰만 수락",
+      "group": "R-B",
+      "mode": "auto"
+    },
+    "POL-R-06": {
+      "title": "연결 토큰을 다른 서비스 인증에 재사용 금지",
+      "group": "R-B",
+      "mode": "feature"
+    },
+    "POL-R-07": {
+      "title": "연결 응답 대상이 선택한 대상과 일치하는지 확인",
+      "group": "R-B",
+      "mode": "feature"
+    },
+    "POL-R-08": {
+      "title": "승인 목록 서버에만 인증 요청 전송",
+      "group": "R-B",
+      "mode": "manual"
+    },
+    "POL-R-09": {
+      "title": "인증 결과 수신처를 사전 승인된 곳으로 제한",
+      "group": "R-B",
+      "mode": "feature"
+    },
+    "POL-R-10": {
+      "title": "인증 결과가 현재 사용자·세션 요청과 일치하는지 확인",
+      "group": "R-B",
+      "mode": "feature"
+    },
+    "POL-R-11": {
+      "title": "조회 주소를 승인된 목적지로 제한",
+      "group": "R-C",
+      "mode": "auto"
+    },
+    "POL-R-12": {
+      "title": "이름 조회·주소 이동 후 최종 접속지 재확인",
+      "group": "R-C",
+      "mode": "manual"
+    },
+    "POL-R-13": {
+      "title": "토큰·API 키를 별도 보관, 설정·로그에 평문 금지",
+      "group": "R-D",
+      "mode": "manual"
+    },
+    "POL-R-14": {
+      "title": "서버마다 별도 인증정보 사용",
+      "group": "R-B",
+      "mode": "manual"
+    },
+    "POL-R-15": {
+      "title": "사용자·Agent 접근권한을 승인 업무 범위로 제한",
+      "group": "R-B",
+      "mode": "manual"
+    },
+    "POL-R-16": {
+      "title": "원격 연결은 암호화 통신만 사용",
+      "group": "R-D",
+      "mode": "feature"
+    },
+    "POL-R-17": {
+      "title": "접속 주소와 인증서의 서버 이름 일치 확인",
+      "group": "R-D",
+      "mode": "feature"
+    },
+    "POL-R-18": {
+      "title": "원격은 HTTPS, 로컬은 승인된 실행 파일·설정만",
+      "group": "R-D",
+      "mode": "auto"
+    },
+    "POL-R-19": {
+      "title": "승인된 웹페이지에서 시작된 요청만 수락",
+      "group": "R-D",
+      "mode": "feature"
+    },
+    "POL-R-20": {
+      "title": "실행 파일·값·환경 설정을 승인 설정과 대조",
+      "group": "R-E",
+      "mode": "manual"
+    },
+    "POL-R-21": {
+      "title": "서버 제공자·주소·기능을 표시하고 사용자 동의",
+      "group": "R-F",
+      "mode": "auto"
+    },
+    "POL-R-22": {
+      "title": "동의 범위(서버·기능·기간) 기록",
+      "group": "R-F",
+      "mode": "auto"
+    }
+  }
+}

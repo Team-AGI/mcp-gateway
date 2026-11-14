@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT.parent / "full_stack_lab/gateway/app/organization_policies.json"
 RUNTIME = ROOT.parent / "full_stack_lab/opa"
-STATUS = ("구현", "부분", "없음", "구조적 차단")
+MODES = ("auto", "feature", "manual", "structural")
 
 
 def runtime_rules():
@@ -27,7 +27,9 @@ def build():
     classification_bytes = (ROOT / "source/classification.json").read_bytes()
     sheet = json.loads(sheet_bytes)["policies"]
     classes = json.loads(classification_bytes)["policies"]
-    if set(sheet) != set(classes):
+    titles_bytes = (ROOT / "source/console_titles.json").read_bytes()
+    titles = json.loads(titles_bytes)
+    if set(sheet) != set(classes) or set(sheet) != set(titles["policies"]):
         raise ValueError("Policy sources contain different identifiers")
     rules, tests = set(), set()
     for path in (ROOT / "pac").glob("*.rego"):
@@ -44,22 +46,25 @@ def build():
         classification = classes[pid]
         rule = source.get("rule") or {}
         candidates = candidates_of(classification)
-        if classification.get("status") not in STATUS:
-            raise ValueError(f"{pid}: unknown implementation status")
+        meta = titles["policies"][pid]
+        if meta["mode"] not in MODES or meta["group"] not in titles["groups"] or source["priority"] not in ("P1", "P2", "P3"):
+            raise ValueError(f"{pid}: invalid console metadata")
         policies.append({"id": pid, "name": source["target"], "stage": source["stage"],
+                         "title": meta["title"], "group": meta["group"], "group_title": titles["groups"][meta["group"]],
+                         "mode": meta["mode"], "priority": source["priority"],
                          "content": source["content"], "condition": source["condition"],
                          "required_evidence": source.get("evidence", ""),
                          "pass_condition": rule.get("pass_condition", ""),
                          "block_condition": rule.get("block_condition", ""),
-                         "category": classification["category"], "implementation": classification["enforced_by"],
                          "has_rule": pid in rules, "has_test_definition": pid in tests,
                          "candidate_rule_ids": candidates,
                          "rule_runtime": pac_loaded and pid in rules,
                          "runtime_rule_ids": [c for c in candidates if c in ledger]})
     return {"schema": 1, "source_sha256": hashlib.sha256(sheet_bytes).hexdigest(),
-            "summary": {"pac_runtime_loaded": pac_loaded,
+            "summary": {"mode": {m: sum(p["mode"] == m for p in policies) for m in MODES}, "pac_runtime_loaded": pac_loaded,
                         "with_runtime_rule": sum(bool(p["runtime_rule_ids"]) for p in policies)},
-            "classification_sha256": hashlib.sha256(classification_bytes).hexdigest(), "policies": policies}
+            "classification_sha256": hashlib.sha256(classification_bytes).hexdigest(),
+            "titles_sha256": hashlib.sha256(titles_bytes).hexdigest(), "policies": policies}
 
 
 def main():
