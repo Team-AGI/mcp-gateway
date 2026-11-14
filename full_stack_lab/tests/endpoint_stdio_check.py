@@ -144,6 +144,25 @@ class Preparation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'Node'):source.prepare(self.config,self.body,self.request)
         self.started.assert_not_called()
 
+    def test_another_servers_long_install_does_not_hold_this_call(self):
+        # The background prefetch installing another server (Ghidra: minutes) held one lock for every server, so a
+        # call to a ready server waited out its one-minute deadline (pj3).
+        source.prepare(self.config,self.body,self.request)
+        other=source.folder_lock(self.base/'0123456789abcdef')
+        other.acquire()
+        try:
+            args,folder,env=source.prepare(self.config,self.body,self.request,seconds=2)
+        finally:
+            other.release()
+        self.assertEqual(folder.parent,self.base)
+        # The same folder is still prepared by one caller at a time.
+        mine=source.folder_lock(folder)
+        mine.acquire()
+        try:
+            with self.assertRaises(TimeoutError):source.prepare(self.config,self.body,self.request,seconds=.5)
+        finally:
+            mine.release()
+
     def test_unprotected_root_and_deadline_do_not_download(self):
         with self.assertRaises(ValueError):source.prepare({**self.config,'source_protected':lambda p:False},self.body,self.request)
         with self.assertRaises(TimeoutError):source.prepare(self.config,self.body,self.request,seconds=-1)
