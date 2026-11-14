@@ -1,19 +1,10 @@
 {
-  "captured_at": "2026-11-02T18:25:00+09:00",
-  "head": "07ce2080ee7741e1d79840706a5c2ebfb9265241",
-  "branch": "11/02-accounts-mint",
+  "captured_at": "2026-11-14T14:32:04+09:00",
+  "head": "cb4079c03816a033bebd4d857441f505313de703",
+  "branch": "fix/approval-window",
   "status": [
     "M research/llm-wiki/analysis/integration-cases.json",
-    " M research/llm-wiki/analysis/requirements.json",
-    " M research/llm-wiki/analysis/threat-trace-review-1020/README.md",
-    " M research/llm-wiki/catalogs/threats.json",
-    " M research/llm-wiki/status/current.md",
-    "?? api.py",
-    "?? c",
-    "?? p3_ui.py",
-    "?? q",
-    "?? research/llm-wiki/status/reports/2026-11-02-accounts-and-mint-lab.md",
-    "?? sftp_put.py"
+    " M research/llm-wiki/analysis/requirements.json"
   ],
   "scope": "local-code-only",
   "deployment_verified": false,
@@ -21,11 +12,11 @@
   "files": [
     {
       "path": "full_stack_lab/gateway/app/core.py",
-      "sha256": "cba0c9df121a007c6b83df9e5480ec49cf739dd20eec212b33c31b8b91c38adf"
+      "sha256": "b37b72b445f116b4a4a5711597cd4ce92bfe3084f4c86c5bbcee5707b65e940f"
     },
     {
       "path": "full_stack_lab/gateway/app/pac.py",
-      "sha256": "bc9884db62b33244057b4f816d33b3505ad9789b549efd733b3b9f0993dc20ee"
+      "sha256": "2b8330a69b4c99794d31a3a88a38f650ba00ce0cee156501ab35b0fd5359ea1a"
     },
     {
       "path": "full_stack_lab/gateway/app/poisoning.py",
@@ -45,7 +36,7 @@
     },
     {
       "path": "full_stack_lab/opa/pac15.rego",
-      "sha256": "241999b6fe092bad73d83c7f3c51c3cc3dea2cbc88ee14a31b9ce682f14b6a95"
+      "sha256": "d63fd5d6d9f2cdf765b3e94e740c9f8916cf653f76ee0fae82689f2de46fa4fa"
     },
     {
       "path": "full_stack_lab/opa/decision.rego",
@@ -53,11 +44,11 @@
     },
     {
       "path": "endpoint-agent/bootstrap.py",
-      "sha256": "1999155151bb3f3b9fd408cf479d0cbe1d78c4d086d1a53a16e71ddfdbdc5da9"
+      "sha256": "807821b39386c188039493450833adf82fd8d5ba1a594f02054a30ceb0a99bf8"
     },
     {
       "path": "endpoint-agent/managed-linux.py",
-      "sha256": "4e047e2ab00a0e88f4ec44d721182395828410b1f8d902d4421f5777f7b9553c"
+      "sha256": "95157db8a92070113b7d5188933dbc3bb58b731b87819b58a7ea0f748522d653"
     },
     {
       "path": "endpoint-agent/enforce-linux.py",
